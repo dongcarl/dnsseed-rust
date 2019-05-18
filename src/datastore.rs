@@ -1,5 +1,5 @@
 use std::{cmp, mem};
-use std::collections::{HashMap, hash_map};
+use std::collections::{HashSet, HashMap, hash_map};
 use std::sync::RwLock;
 use std::net::SocketAddr;
 use std::time::{Duration, Instant};
@@ -38,10 +38,31 @@ pub enum StringSetting {
 	SubverRegex,
 }
 
+struct Node {
+	state: AddressState,
+	last_services: u64,
+	last_update: Instant,
+}
+
 struct Nodes {
-	good_node_services: HashMap<u8, Vec<SocketAddr>>,
-	nodes_to_state: HashMap<SocketAddr, AddressState>,
+	good_node_services: HashMap<u8, HashSet<SocketAddr>>,
+	nodes_to_state: HashMap<SocketAddr, Node>,
 	state_next_scan: HashMap<AddressState, Vec<(Instant, SocketAddr)>>,
+}
+struct NodesMutRef<'a> {
+	good_node_services: &'a mut HashMap<u8, HashSet<SocketAddr>>,
+	nodes_to_state: &'a mut HashMap<SocketAddr, Node>,
+	state_next_scan: &'a mut HashMap<AddressState, Vec<(Instant, SocketAddr)>>,
+
+}
+impl Nodes {
+	fn borrow_mut<'a>(&'a mut self) -> NodesMutRef<'a> {
+		NodesMutRef {
+			good_node_services: &mut self.good_node_services,
+			nodes_to_state: &mut self.nodes_to_state,
+			state_next_scan: &mut self.state_next_scan,
+		}
+	}
 }
 
 pub struct Store {
@@ -82,7 +103,7 @@ impl Store {
 		state_vecs.insert(AddressState::WasGood, Vec::new());
 		let mut good_node_services = HashMap::with_capacity(64);
 		for i in 0..64 {
-			good_node_services.insert(i, Vec::new());
+			good_node_services.insert(i, HashSet::new());
 		}
 		Store {
 			u64_settings: RwLock::new(u64s),
@@ -114,7 +135,11 @@ impl Store {
 			if let Ok(socketaddr) = addr.socket_addr() {
 				match nodes.nodes_to_state.entry(socketaddr.clone()) {
 					hash_map::Entry::Vacant(e) => {
-						e.insert(AddressState::Untested);
+						e.insert(Node {
+							state: AddressState::Untested,
+							last_services: 0,
+							last_update: cur_time,
+						});
 						nodes.state_next_scan.get_mut(&AddressState::Untested).unwrap().push((cur_time, socketaddr));
 					},
 					hash_map::Entry::Occupied(_) => {},
@@ -126,17 +151,31 @@ impl Store {
 	}
 
 	pub fn set_node_state(&self, addr: SocketAddr, state: AddressState, services: u64) {
-		let mut nodes = self.nodes.write().unwrap();
+		let mut nodes_lock = self.nodes.write().unwrap();
+		let nodes = nodes_lock.borrow_mut();
 		let state_ref = nodes.nodes_to_state.get_mut(&addr).unwrap();
-		if *state_ref == AddressState::Good && state != AddressState::Good {
-			*state_ref = AddressState::WasGood;
-			nodes.state_next_scan.get_mut(&AddressState::WasGood).unwrap().push((Instant::now(), addr));
+		state_ref.last_update = Instant::now();
+		if state_ref.state == AddressState::Good && state != AddressState::Good {
+			state_ref.state = AddressState::WasGood;
+			for i in 0..64 {
+				if state_ref.last_services & (1 << i) != 0 {
+					nodes.good_node_services.get_mut(&i).unwrap().remove(&addr);
+				}
+			}
+			state_ref.last_services = 0;
+			nodes.state_next_scan.get_mut(&AddressState::WasGood).unwrap().push((state_ref.last_update, addr));
 		} else {
-			*state_ref = state;
-			nodes.state_next_scan.get_mut(&state).unwrap().push((Instant::now(), addr));
-		}
-		if state == AddressState::Good {
-
+			state_ref.state = state;
+			if state == AddressState::Good {
+				for i in 0..64 {
+					if services & (1 << i) != 0 && state_ref.last_services & (1 << i) == 0 {
+						nodes.good_node_services.get_mut(&i).unwrap().insert(addr);
+					} else if services & (1 << i) == 0 && state_ref.last_services & (1 << i) != 0 {
+						nodes.good_node_services.get_mut(&i).unwrap().remove(&addr);
+					}
+				}
+			}
+			nodes.state_next_scan.get_mut(&state).unwrap().push((state_ref.last_update, addr));
 		}
 	}
 

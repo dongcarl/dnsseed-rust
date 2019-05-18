@@ -1,0 +1,13 @@
+[package]
+name = "dnsseed-rust"
+version = "0.1.0"
+authors = ["matt"]
+edition = "2018"
+
+[dependencies]
+bitcoin = { path = "../Bitcoin/rust-bitcoin" }
+bitcoin_hashes = "0.3"
+tokio = "0.1"
+bytes = "0.4"
+futures = "0.1"
+rand = "0.6"

@@ -1,8 +1,11 @@
+use std::sync::atomic::Ordering;
 use std::collections::LinkedList;
 use std::sync::{Arc, Mutex};
 use std::io::Write;
 
 use crate::datastore::{Store, AddressState, U64Setting, RegexSetting};
+
+use crate::START_SHUTDOWN;
 
 pub enum Stat {
 	HeaderCount(u64),
@@ -31,6 +34,9 @@ impl Printer {
 		std::thread::spawn(move || {
 			loop {
 				std::thread::sleep(std::time::Duration::from_secs(1));
+				if START_SHUTDOWN.load(Ordering::Relaxed) {
+					break;
+				}
 
 				let stdout = std::io::stdout();
 				let mut out = stdout.lock();

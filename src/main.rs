@@ -1,4 +1,5 @@
 mod printer;
+mod reader;
 mod peer;
 mod timeout_stream;
 mod datastore;
@@ -6,6 +7,7 @@ mod datastore;
 use std::env;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
+use std::sync::atomic::{Ordering, AtomicBool};
 use std::time::{Duration, Instant};
 use std::net::SocketAddr;
 
@@ -29,6 +31,7 @@ static mut HEADER_MAP: Option<Box<Mutex<HashMap<sha256d::Hash, u64>>>> = None;
 static mut HEIGHT_MAP: Option<Box<Mutex<HashMap<u64, sha256d::Hash>>>> = None;
 static mut DATA_STORE: Option<Box<Store>> = None;
 static mut PRINTER: Option<Box<Printer>> = None;
+pub static START_SHUTDOWN: AtomicBool = AtomicBool::new(false);
 
 struct PeerState {
 	recvd_version: bool,
@@ -40,7 +43,8 @@ struct PeerState {
 	request: (u64, sha256d::Hash),
 }
 
-fn scan_node(scan_time: Instant, node: SocketAddr) {
+pub fn scan_node(scan_time: Instant, node: SocketAddr) {
+	if START_SHUTDOWN.load(Ordering::Relaxed) { return; }
 	let printer = unsafe { PRINTER.as_ref().unwrap() };
 	let store = unsafe { DATA_STORE.as_ref().unwrap() };
 
@@ -180,7 +184,9 @@ fn scan_net() {
 		Delay::new(iter_time).then(|_| {
 			let store = unsafe { DATA_STORE.as_ref().unwrap() };
 			store.save_data().then(|_| {
-				scan_net();
+				if !START_SHUTDOWN.load(Ordering::Relaxed) {
+					scan_net();
+				}
 				future::ok(())
 			})
 		})
@@ -195,6 +201,9 @@ fn make_trusted_conn(trusted_sockaddr: SocketAddr) {
 		let (mut trusted_write, trusted_read) = trusted_split;
 		let mut starting_height = 0;
 		trusted_read.map_err(|_| { () }).for_each(move |msg| {
+			if START_SHUTDOWN.load(Ordering::Relaxed) {
+				return future::err(());
+			}
 			match msg {
 				NetworkMessage::Version(ver) => {
 					if let Err(_) = trusted_write.try_send(NetworkMessage::Verack) {
@@ -263,8 +272,10 @@ fn make_trusted_conn(trusted_sockaddr: SocketAddr) {
 			future::err(())
 		})
 	}).then(move |_: Result<(), ()>| {
-		printer.add_line("Lost connection from trusted peer".to_string(), true);
-		make_trusted_conn(trusted_sockaddr);
+		if !START_SHUTDOWN.load(Ordering::Relaxed) {
+			printer.add_line("Lost connection from trusted peer".to_string(), true);
+			make_trusted_conn(trusted_sockaddr);
+		}
 		future::ok(())
 	}));
 }
@@ -289,10 +300,13 @@ fn main() {
 
 		Store::new(path).and_then(move |store| {
 			unsafe { DATA_STORE = Some(Box::new(store)) };
-			unsafe { PRINTER = Some(Box::new(Printer::new(DATA_STORE.as_ref().unwrap()))) };
+			let store = unsafe { DATA_STORE.as_ref().unwrap() };
+			unsafe { PRINTER = Some(Box::new(Printer::new(store))) };
 
 			let trusted_sockaddr: SocketAddr = addr.parse().unwrap();
 			make_trusted_conn(trusted_sockaddr);
+
+			reader::read(store, unsafe { PRINTER.as_ref().unwrap() });
 
 			future::ok(())
 		}).or_else(|_| {

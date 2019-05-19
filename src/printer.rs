@@ -2,7 +2,7 @@ use std::collections::LinkedList;
 use std::sync::{Arc, Mutex};
 use std::io::Write;
 
-use crate::datastore::{Store, AddressState, U64Setting, StringSetting};
+use crate::datastore::{Store, AddressState, U64Setting, RegexSetting};
 
 pub enum Stat {
 	HeaderCount(u64),
@@ -82,7 +82,7 @@ impl Printer {
 						"Minimum protocol version: {} (\"v x\" to change value to x)\n", store.get_u64(U64Setting::MinProtocolVersion)
 						).as_bytes()).expect("stdout broken?");
 				out.write_all(format!(
-						"Subversion match regex: {} (\"s x\" to change value to x)\n", store.get_string(StringSetting::SubverRegex)
+						"Subversion match regex: {} (\"s x\" to change value to x)\n", store.get_regex(RegexSetting::SubverRegex).as_str()
 						).as_bytes()).expect("stdout broken?");
 
 				out.write_all(b"\nRetry times (in seconds):\n").expect("stdout broken?");
@@ -129,7 +129,6 @@ impl Printer {
 						"w x: Change the amount of time a node is considered WAS_GOOD after it fails to x from {} (in seconds)\n",
 						store.get_u64(U64Setting::WasGoodTimeout)
 						).as_bytes()).expect("stdout broken?");
-				out.write_all(b"p: Enable/disable updating these stats\n").expect("stdout broken?");
 				out.write_all(b"a x: Scan node x\n").expect("stdout broken?");
 				out.write_all(b"\x1b[s").expect("stdout broken?"); // Save cursor position and provide a blank line before cursor
 				out.write_all(b"\x1b[;H\x1b[2K").expect("stdout broken?");

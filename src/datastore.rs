@@ -1,6 +1,6 @@
 use std::{cmp, mem};
 use std::collections::{HashSet, HashMap, hash_map};
-use std::sync::RwLock;
+use std::sync::{Arc, RwLock};
 use std::net::SocketAddr;
 use std::time::{Duration, Instant};
 use std::io::{BufRead, BufReader};
@@ -13,6 +13,8 @@ use rand::seq::SliceRandom;
 use tokio::prelude::*;
 use tokio::fs::File;
 use tokio::io::write_all;
+
+use regex::Regex;
 
 #[derive(Clone, Copy, Hash, PartialEq, Eq)]
 pub enum AddressState {
@@ -39,7 +41,7 @@ pub enum U64Setting {
 }
 
 #[derive(Hash, PartialEq, Eq)]
-pub enum StringSetting {
+pub enum RegexSetting {
 	SubverRegex,
 }
 
@@ -72,7 +74,7 @@ impl Nodes {
 
 pub struct Store {
 	u64_settings: RwLock<HashMap<U64Setting, u64>>,
-	subver_regex: RwLock<String>,
+	subver_regex: RwLock<Arc<Regex>>,
 	nodes: RwLock<Nodes>,
 	store: String,
 }
@@ -111,8 +113,8 @@ impl Store {
 			u64s.insert(U64Setting::RescanInterval(AddressState::TimeoutDuringRequest), try_read!(l, u64));
 			u64s.insert(U64Setting::RescanInterval(AddressState::Good), try_read!(l, u64));
 			u64s.insert(U64Setting::RescanInterval(AddressState::WasGood), try_read!(l, u64));
-			future::ok((u64s, try_read!(l, String)))
-		}).or_else(|_| -> future::FutureResult<(HashMap<U64Setting, u64>, String), ()> {
+			future::ok((u64s, try_read!(l, Regex)))
+		}).or_else(|_| -> future::FutureResult<(HashMap<U64Setting, u64>, Regex), ()> {
 			let mut u64s = HashMap::with_capacity(15);
 			u64s.insert(U64Setting::ConnsPerSec, 50);
 			u64s.insert(U64Setting::RunTimeout, 120);
@@ -129,7 +131,7 @@ impl Store {
 			u64s.insert(U64Setting::RescanInterval(AddressState::Good), 1800);
 			u64s.insert(U64Setting::RescanInterval(AddressState::WasGood), 1800);
 			u64s.insert(U64Setting::MinProtocolVersion, 10000); //XXX
-			future::ok((u64s, ".*".to_string()))
+			future::ok((u64s, Regex::new(".*").unwrap()))
 		});
 
 		macro_rules! nodes_uninitd {
@@ -216,7 +218,7 @@ impl Store {
 		settings_future.join(nodes_future).and_then(move |((u64_settings, regex), nodes)| {
 			future::ok(Store {
 				u64_settings: RwLock::new(u64_settings),
-				subver_regex: RwLock::new(regex),
+				subver_regex: RwLock::new(Arc::new(regex)),
 				nodes: RwLock::new(nodes),
 				store,
 			})
@@ -227,12 +229,20 @@ impl Store {
 		*self.u64_settings.read().unwrap().get(&setting).unwrap()
 	}
 
+	pub fn set_u64(&self, setting: U64Setting, value: u64) {
+		*self.u64_settings.write().unwrap().get_mut(&setting).unwrap() = value;
+	}
+
 	pub fn get_node_count(&self, state: AddressState) -> usize {
 		self.nodes.read().unwrap().state_next_scan.get(&state).unwrap().len()
 	}
 
-	pub fn get_string(&self, _setting: StringSetting) -> String {
-		self.subver_regex.read().unwrap().clone()
+	pub fn get_regex(&self, _setting: RegexSetting) -> Arc<Regex> {
+		Arc::clone(&*self.subver_regex.read().unwrap())
+	}
+
+	pub fn set_regex(&self, _setting: RegexSetting, value: Regex) {
+		*self.subver_regex.write().unwrap() = Arc::new(value);
 	}
 
 	pub fn add_fresh_nodes(&self, addresses: &Vec<(u32, Address)>) {

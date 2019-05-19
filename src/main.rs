@@ -19,7 +19,7 @@ use bitcoin::util::hash::BitcoinHash;
 
 use printer::{Printer, Stat};
 use peer::Peer;
-use datastore::{AddressState, Store, U64Setting};
+use datastore::{AddressState, Store, U64Setting, RegexSetting};
 
 use tokio::prelude::*;
 use tokio::timer::Delay;
@@ -102,6 +102,11 @@ fn scan_node(scan_time: Instant, node: SocketAddr) {
 						state_lock.fail_reason = AddressState::NotFullNode;
 						return future::err(());
 					}
+					if !store.get_regex(RegexSetting::SubverRegex).is_match(&ver.user_agent) {
+						printer.add_line(format!("Updating {} to BadVersion subver {}", node, ver.user_agent.replace(|c: char| !c.is_ascii() || c < ' ' || c > '~', "")), true);
+						state_lock.fail_reason = AddressState::BadVersion;
+						return future::err(());
+					}
 					check_set_flag!(recvd_version, "version");
 					state_lock.node_services = ver.services;
 					if let Err(_) = write.try_send(NetworkMessage::Verack) {
@@ -126,10 +131,8 @@ fn scan_node(scan_time: Instant, node: SocketAddr) {
 					}
 				},
 				NetworkMessage::Addr(addrs) => {
-					if addrs.len() > 1 {
-						check_set_flag!(recvd_addrs, "addr");
-						unsafe { DATA_STORE.as_ref().unwrap() }.add_fresh_nodes(&addrs);
-					}
+					state_lock.recvd_addrs = true;
+					unsafe { DATA_STORE.as_ref().unwrap() }.add_fresh_nodes(&addrs);
 				},
 				NetworkMessage::Block(block) => {
 					if block.header.bitcoin_hash() != state_lock.request.1 ||

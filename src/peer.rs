@@ -92,10 +92,7 @@ impl<'a> codec::Encoder for MsgCoder<'a> {
 	}
 }
 
-pub struct Peer {
-	
-}
-
+pub struct Peer {}
 impl Peer {
 	pub fn new(addr: SocketAddr, timeout: Duration, printer: &'static Printer) -> impl Future<Error=(), Item=(mpsc::Sender<NetworkMessage>, impl Stream<Item=NetworkMessage, Error=std::io::Error>)> {
 		let connect_timeout = Delay::new(Instant::now() + timeout.clone()).then(|_| {

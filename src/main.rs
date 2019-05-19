@@ -175,8 +175,11 @@ fn scan_net() {
 			iter_time += per_iter_time;
 		}
 		Delay::new(iter_time).then(|_| {
-			scan_net();
-			future::ok(())
+			let store = unsafe { DATA_STORE.as_ref().unwrap() };
+			store.save_data().then(|_| {
+				scan_net();
+				future::ok(())
+			})
 		})
 	}));
 }
@@ -275,15 +278,22 @@ fn main() {
 	unsafe { HEIGHT_MAP.as_ref().unwrap() }.lock().unwrap().insert(0, genesis_block(Network::Bitcoin).bitcoin_hash());
 	unsafe { HIGHEST_HEADER = Some(Box::new(Mutex::new((genesis_block(Network::Bitcoin).bitcoin_hash(), 0)))) };
 
-	unsafe { DATA_STORE = Some(Box::new(Store::new())) };
-	unsafe { PRINTER = Some(Box::new(Printer::new(DATA_STORE.as_ref().unwrap()))) };
-
 	tokio::run(future::lazy(|| {
 		let mut args = env::args();
 		args.next();
-		let trusted_sockaddr: SocketAddr = args.next().unwrap().parse().unwrap();
-		make_trusted_conn(trusted_sockaddr);
+		let path = args.next().unwrap();
+		let addr = args.next().unwrap();
 
-		future::ok(())
+		Store::new(path).and_then(move |store| {
+			unsafe { DATA_STORE = Some(Box::new(store)) };
+			unsafe { PRINTER = Some(Box::new(Printer::new(DATA_STORE.as_ref().unwrap()))) };
+
+			let trusted_sockaddr: SocketAddr = addr.parse().unwrap();
+			make_trusted_conn(trusted_sockaddr);
+
+			future::ok(())
+		}).or_else(|_| {
+			future::err(())
+		})
 	}));
 }

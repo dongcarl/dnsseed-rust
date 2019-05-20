@@ -291,6 +291,7 @@ impl Store {
 						nodes.good_node_services.get_mut(&i).unwrap().remove(&addr);
 					}
 				}
+				state_ref.last_services = services;
 			}
 			nodes.state_next_scan.get_mut(&state).unwrap().push((state_ref.last_update, addr));
 		}

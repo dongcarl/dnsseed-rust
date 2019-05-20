@@ -8,7 +8,7 @@ use std::io::{BufRead, BufReader};
 use bitcoin::network::address::Address;
 
 use rand::thread_rng;
-use rand::seq::SliceRandom;
+use rand::seq::{SliceRandom, IteratorRandom};
 
 use tokio::prelude::*;
 use tokio::fs::File;
@@ -352,11 +352,78 @@ impl Store {
 			}
 			write_all(f, nodes_buff)
 		}).and_then(|(mut f, _)| {
-				f.poll_sync_all()
+			f.poll_sync_all()
 		}).and_then(|_| {
 			tokio::fs::rename(nodes_file.clone() + ".tmp", nodes_file)
 		});
-		settings_future.join(nodes_future).then(|_| { future::ok(()) })
+
+		let dns_file = self.store.clone() + "/nodes.dump";
+		let dns_future = File::create(dns_file.clone() + ".tmp").and_then(move |f| {
+			let mut dns_buff = String::new();
+			{
+				let nodes = self.nodes.read().unwrap();
+				let mut rng = thread_rng();
+				for i in 1u64..10u64 {
+					let mut v6_set = Vec::new();
+					let mut v4_set = Vec::new();
+					if i.count_ones() == 1 {
+						for j in 0..64 {
+							if i & (1 << j) != 0 {
+								let set_ref = nodes.good_node_services.get(&j).unwrap();
+								v4_set = set_ref.iter().filter(|e| e.is_ipv4()).choose_multiple(&mut rng, 21).iter().map(|e| (*e).clone()).collect();
+								v6_set = set_ref.iter().filter(|e| e.is_ipv6()).choose_multiple(&mut rng, 12).iter().map(|e| (*e).clone()).collect();
+								break;
+							}
+						}
+					} else if i.count_ones() == 2 {
+						let mut first_set = None;
+						let mut second_set = None;
+						for j in 0..64 {
+							if i & (1 << j) != 0 {
+								if first_set == None {
+									first_set = Some(nodes.good_node_services.get(&j).unwrap());
+								} else {
+									second_set = Some(nodes.good_node_services.get(&j).unwrap());
+									break;
+								}
+							}
+						}
+						v4_set = first_set.unwrap().intersection(second_set.unwrap()).filter(|e| e.is_ipv4()).choose_multiple(&mut rng, 21).iter().map(|e| (*e).clone()).collect();
+						v6_set = first_set.unwrap().intersection(second_set.unwrap()).filter(|e| e.is_ipv6()).choose_multiple(&mut rng, 12).iter().map(|e| (*e).clone()).collect();
+					} else {
+						//TODO: Could optimize this one a bit
+						let mut intersection;
+						let mut intersection_set_ref = None;
+						for j in 0..64 {
+							if i & (1 << j) != 0 {
+								if intersection_set_ref == None {
+									intersection_set_ref = Some(nodes.good_node_services.get(&j).unwrap());
+								} else {
+									let new_intersection = intersection_set_ref.unwrap().intersection(nodes.good_node_services.get(&j).unwrap()).map(|e| (*e).clone()).collect();
+									intersection = Some(new_intersection);
+									intersection_set_ref = Some(intersection.as_ref().unwrap());
+								}
+							}
+						}
+						v4_set = intersection_set_ref.unwrap().iter().filter(|e| e.is_ipv4()).choose_multiple(&mut rng, 21).iter().map(|e| (*e).clone()).collect();
+						v6_set = intersection_set_ref.unwrap().iter().filter(|e| e.is_ipv6()).choose_multiple(&mut rng, 12).iter().map(|e| (*e).clone()).collect();
+					}
+					for a in v4_set {
+						dns_buff += &format!("x{:x}.dnsseed.bluematt.me\tIN\tA\t{}\n", i, a);
+					}
+					for a in v6_set {
+						dns_buff += &format!("x{:x}.dnsseed.bluematt.me\tIN\tAAAA\t{}\n", i, a);
+					}
+				}
+			}
+			write_all(f, dns_buff)
+		}).and_then(|(mut f, _)| {
+			f.poll_sync_all()
+		}).and_then(|_| {
+			tokio::fs::rename(dns_file.clone() + ".tmp", dns_file)
+		});
+
+		settings_future.join3(nodes_future, dns_future).then(|_| { future::ok(()) })
 	}
 
 	pub fn get_next_scan_nodes(&self) -> Vec<SocketAddr> {

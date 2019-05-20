@@ -46,9 +46,10 @@ pub enum RegexSetting {
 }
 
 struct Node {
-	state: AddressState,
-	last_services: u64,
 	last_update: Instant,
+	last_good: Instant, // Ignored unless state is Good or WasGood
+	last_services: u64,
+	state: AddressState,
 }
 
 struct Nodes {
@@ -200,6 +201,7 @@ impl Store {
 					},
 					last_services,
 					last_update: Instant::now(),
+					last_good: Instant::now(),
 				};
 				if node.state == AddressState::Good {
 					for i in 0..64 {
@@ -256,6 +258,7 @@ impl Store {
 							state: AddressState::Untested,
 							last_services: 0,
 							last_update: cur_time,
+							last_good: Instant::now(),
 						});
 						nodes.state_next_scan.get_mut(&AddressState::Untested).unwrap().push((cur_time, socketaddr));
 					},
@@ -272,7 +275,9 @@ impl Store {
 		let nodes = nodes_lock.borrow_mut();
 		let state_ref = nodes.nodes_to_state.get_mut(&addr).unwrap();
 		state_ref.last_update = Instant::now();
-		if state_ref.state == AddressState::Good && state != AddressState::Good {
+		if (state_ref.state == AddressState::Good || state_ref.state == AddressState::WasGood)
+				&& state != AddressState::Good
+				&& state_ref.last_good >= state_ref.last_update + Duration::from_secs(self.get_u64(U64Setting::WasGoodTimeout)) {
 			state_ref.state = AddressState::WasGood;
 			for i in 0..64 {
 				if state_ref.last_services & (1 << i) != 0 {
@@ -292,6 +297,7 @@ impl Store {
 					}
 				}
 				state_ref.last_services = services;
+				state_ref.last_good = state_ref.last_update;
 			}
 			nodes.state_next_scan.get_mut(&state).unwrap().push((state_ref.last_update, addr));
 		}

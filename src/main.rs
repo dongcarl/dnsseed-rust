@@ -135,6 +135,12 @@ pub fn scan_node(scan_time: Instant, node: SocketAddr) {
 					}
 				},
 				NetworkMessage::Addr(addrs) => {
+					if addrs.len() > 1000 {
+						state_lock.fail_reason = AddressState::ProtocolViolation;
+						printer.add_line(format!("Updating {} to ProtocolViolation due to oversized addr: {}", node, addrs.len()), true);
+						state_lock.recvd_addrs = false;
+						return future::err(());
+					}
 					state_lock.recvd_addrs = true;
 					unsafe { DATA_STORE.as_ref().unwrap() }.add_fresh_nodes(&addrs);
 				},

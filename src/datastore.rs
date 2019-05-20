@@ -421,10 +421,10 @@ impl Store {
 							.choose_multiple(&mut rng, 12).iter().map(|e| e.ip()).collect();
 					}
 					for a in v4_set {
-						dns_buff += &format!("x{:x}.dnsseed.bluematt.me\tIN\tA\t{}\n", i, a);
+						dns_buff += &format!("x{:x}.dnsseed\tIN\tA\t{}\n", i, a);
 					}
 					for a in v6_set {
-						dns_buff += &format!("x{:x}.dnsseed.bluematt.me\tIN\tAAAA\t{}\n", i, a);
+						dns_buff += &format!("x{:x}.dnsseed\tIN\tAAAA\t{}\n", i, a);
 					}
 				}
 			}

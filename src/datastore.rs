@@ -370,8 +370,10 @@ impl Store {
 						for j in 0..64 {
 							if i & (1 << j) != 0 {
 								let set_ref = nodes.good_node_services.get(&j).unwrap();
-								v4_set = set_ref.iter().filter(|e| e.is_ipv4()).choose_multiple(&mut rng, 21).iter().map(|e| (*e).clone()).collect();
-								v6_set = set_ref.iter().filter(|e| e.is_ipv6()).choose_multiple(&mut rng, 12).iter().map(|e| (*e).clone()).collect();
+								v4_set = set_ref.iter().filter(|e| e.is_ipv4() && e.port() == 8333)
+									.choose_multiple(&mut rng, 21).iter().map(|e| e.ip()).collect();
+								v6_set = set_ref.iter().filter(|e| e.is_ipv6() && e.port() == 8333)
+									.choose_multiple(&mut rng, 12).iter().map(|e| e.ip()).collect();
 								break;
 							}
 						}
@@ -388,8 +390,12 @@ impl Store {
 								}
 							}
 						}
-						v4_set = first_set.unwrap().intersection(second_set.unwrap()).filter(|e| e.is_ipv4()).choose_multiple(&mut rng, 21).iter().map(|e| (*e).clone()).collect();
-						v6_set = first_set.unwrap().intersection(second_set.unwrap()).filter(|e| e.is_ipv6()).choose_multiple(&mut rng, 12).iter().map(|e| (*e).clone()).collect();
+						v4_set = first_set.unwrap().intersection(second_set.unwrap())
+							.filter(|e| e.is_ipv4() && e.port() == 8333)
+							.choose_multiple(&mut rng, 21).iter().map(|e| e.ip()).collect();
+						v6_set = first_set.unwrap().intersection(second_set.unwrap())
+							.filter(|e| e.is_ipv6() && e.port() == 8333)
+							.choose_multiple(&mut rng, 12).iter().map(|e| e.ip()).collect();
 					} else {
 						//TODO: Could optimize this one a bit
 						let mut intersection;
@@ -399,14 +405,19 @@ impl Store {
 								if intersection_set_ref == None {
 									intersection_set_ref = Some(nodes.good_node_services.get(&j).unwrap());
 								} else {
-									let new_intersection = intersection_set_ref.unwrap().intersection(nodes.good_node_services.get(&j).unwrap()).map(|e| (*e).clone()).collect();
+									let new_intersection = intersection_set_ref.unwrap()
+										.intersection(nodes.good_node_services.get(&j).unwrap()).map(|e| (*e).clone()).collect();
 									intersection = Some(new_intersection);
 									intersection_set_ref = Some(intersection.as_ref().unwrap());
 								}
 							}
 						}
-						v4_set = intersection_set_ref.unwrap().iter().filter(|e| e.is_ipv4()).choose_multiple(&mut rng, 21).iter().map(|e| (*e).clone()).collect();
-						v6_set = intersection_set_ref.unwrap().iter().filter(|e| e.is_ipv6()).choose_multiple(&mut rng, 12).iter().map(|e| (*e).clone()).collect();
+						v4_set = intersection_set_ref.unwrap().iter()
+							.filter(|e| e.is_ipv4() && e.port() == 8333)
+							.choose_multiple(&mut rng, 21).iter().map(|e| e.ip()).collect();
+						v6_set = intersection_set_ref.unwrap().iter()
+							.filter(|e| e.is_ipv6() && e.port() == 8333)
+							.choose_multiple(&mut rng, 12).iter().map(|e| e.ip()).collect();
 					}
 					for a in v4_set {
 						dns_buff += &format!("x{:x}.dnsseed.bluematt.me\tIN\tA\t{}\n", i, a);

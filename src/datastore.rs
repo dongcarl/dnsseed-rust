@@ -116,7 +116,7 @@ impl Store {
 			future::ok((u64s, try_read!(l, Regex)))
 		}).or_else(|_| -> future::FutureResult<(HashMap<U64Setting, u64>, Regex), ()> {
 			let mut u64s = HashMap::with_capacity(15);
-			u64s.insert(U64Setting::ConnsPerSec, 50);
+			u64s.insert(U64Setting::ConnsPerSec, 10);
 			u64s.insert(U64Setting::RunTimeout, 120);
 			u64s.insert(U64Setting::WasGoodTimeout, 21600);
 			u64s.insert(U64Setting::RescanInterval(AddressState::Untested), 0);
@@ -299,7 +299,7 @@ impl Store {
 	pub fn save_data(&'static self) -> impl Future<Item=(), Error=()> {
 		let settings_file = self.store.clone() + "/settings";
 		let settings_future = File::create(settings_file.clone() + ".tmp").and_then(move |f| {
-			let settings_string = format!("{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}",
+			let settings_string = format!("{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}",
 				self.get_u64(U64Setting::ConnsPerSec),
 				self.get_u64(U64Setting::RunTimeout),
 				self.get_u64(U64Setting::WasGoodTimeout),
@@ -314,7 +314,8 @@ impl Store {
 				self.get_u64(U64Setting::RescanInterval(AddressState::Timeout)),
 				self.get_u64(U64Setting::RescanInterval(AddressState::TimeoutDuringRequest)),
 				self.get_u64(U64Setting::RescanInterval(AddressState::Good)),
-				self.get_u64(U64Setting::RescanInterval(AddressState::WasGood)));
+				self.get_u64(U64Setting::RescanInterval(AddressState::WasGood)),
+				self.get_regex(RegexSetting::SubverRegex).as_str());
 			write_all(f, settings_string).and_then(|(mut f, _)| {
 				f.poll_sync_all()
 			}).and_then(|_| {
@@ -344,6 +345,7 @@ impl Store {
 						AddressState::Good => 9u8,
 						AddressState::WasGood => 10u8,
 					}.to_string();
+					nodes_buff += ",";
 					nodes_buff += &node.last_services.to_string();
 					nodes_buff += "\n";
 				}

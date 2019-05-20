@@ -34,14 +34,14 @@ impl Printer {
 		std::thread::spawn(move || {
 			loop {
 				std::thread::sleep(std::time::Duration::from_secs(1));
-				if START_SHUTDOWN.load(Ordering::Relaxed) {
-					break;
-				}
 
 				let stdout = std::io::stdout();
 				let mut out = stdout.lock();
 
 				let stats = thread_arc.lock().unwrap();
+				if START_SHUTDOWN.load(Ordering::Relaxed) && stats.connection_count == 0 {
+					break;
+				}
 
 				out.write_all(b"\x1b[2J\x1b[;H\n").expect("stdout broken?");
 				for line in stats.lines.iter() {

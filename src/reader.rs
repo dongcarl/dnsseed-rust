@@ -68,8 +68,8 @@ pub fn read(store: &'static Store, printer: &'static Printer) {
 			_ => err!(),
 		}
 		future::ok(())
-	}).then(|_| {
-		println!("Exiting");
+	}).then(move |_| {
+		printer.add_line("Shutting down...".to_string(), true);
 		future::ok(())
 	}));
 }

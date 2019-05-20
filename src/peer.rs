@@ -18,7 +18,6 @@ use tokio::timer::Delay;
 use futures::sync::mpsc;
 
 use crate::printer::Printer;
-use crate::timeout_stream::TimeoutStream;
 
 struct BytesCoder<'a>(&'a mut bytes::BytesMut);
 impl<'a> std::io::Write for BytesCoder<'a> {
@@ -121,7 +120,7 @@ impl Peer {
 					start_height: 0,
 					relay: true,
 				}));
-				future::ok((sender, TimeoutStream::new(read, timeout)))
+				future::ok((sender, read))
 			})
 	}
 }

@@ -363,7 +363,7 @@ impl Store {
 			{
 				let nodes = self.nodes.read().unwrap();
 				let mut rng = thread_rng();
-				for i in 1u64..10u64 {
+				for i in &[1u64, 4, 5, 8, 9, 12, 13, 1024, 1025, 1028, 1029, 1032, 1033, 1036, 1037] {
 					let mut v6_set = Vec::new();
 					let mut v4_set = Vec::new();
 					if i.count_ones() == 1 {

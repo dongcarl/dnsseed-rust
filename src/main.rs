@@ -101,7 +101,7 @@ pub fn scan_node(scan_time: Instant, node: SocketAddr) {
 						state_lock.fail_reason = AddressState::LowVersion;
 						return future::err(());
 					}
-					if ver.services & 1 != 1 {
+					if ver.services & (1 | (1 << 10)) == 0 {
 						printer.add_line(format!("Updating {} to NotFullNode (services {:x})", node, ver.services), true);
 						state_lock.fail_reason = AddressState::NotFullNode;
 						return future::err(());

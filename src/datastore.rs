@@ -275,10 +275,10 @@ impl Store {
 		let nodes = nodes_lock.borrow_mut();
 		let state_ref = nodes.nodes_to_state.get_mut(&addr).unwrap();
 		let ret = state != state_ref.state;
-		state_ref.last_update = Instant::now();
+		let now = Instant::now();
 		if (state_ref.state == AddressState::Good || state_ref.state == AddressState::WasGood)
 				&& state != AddressState::Good
-				&& state_ref.last_good >= state_ref.last_update + Duration::from_secs(self.get_u64(U64Setting::WasGoodTimeout)) {
+				&& state_ref.last_good >= now - Duration::from_secs(self.get_u64(U64Setting::WasGoodTimeout)) {
 			state_ref.state = AddressState::WasGood;
 			for i in 0..64 {
 				if state_ref.last_services & (1 << i) != 0 {
@@ -286,7 +286,7 @@ impl Store {
 				}
 			}
 			state_ref.last_services = 0;
-			nodes.state_next_scan.get_mut(&AddressState::WasGood).unwrap().push((state_ref.last_update, addr));
+			nodes.state_next_scan.get_mut(&AddressState::WasGood).unwrap().push((now, addr));
 		} else {
 			state_ref.state = state;
 			if state == AddressState::Good {
@@ -298,10 +298,11 @@ impl Store {
 					}
 				}
 				state_ref.last_services = services;
-				state_ref.last_good = state_ref.last_update;
+				state_ref.last_good = now;
 			}
-			nodes.state_next_scan.get_mut(&state).unwrap().push((state_ref.last_update, addr));
+			nodes.state_next_scan.get_mut(&state).unwrap().push((now, addr));
 		}
+		state_ref.last_update = now;
 		ret
 	}
 

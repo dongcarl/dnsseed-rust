@@ -43,7 +43,15 @@ pub fn read(store: &'static Store, printer: &'static Printer) {
 			"t" => store.set_u64(U64Setting::RunTimeout, try_parse_next_chunk!(u64)),
 			"v" => store.set_u64(U64Setting::MinProtocolVersion, try_parse_next_chunk!(u64)),
 			"w" => store.set_u64(U64Setting::WasGoodTimeout, try_parse_next_chunk!(u64)),
-			"s" => store.set_regex(RegexSetting::SubverRegex, try_parse_next_chunk!(Regex)),
+			"s" => {
+				if line.len() < 3 || !line.starts_with("s ") {
+					err!();
+				}
+				store.set_regex(RegexSetting::SubverRegex, match line[2..].parse::<Regex>() {
+					Ok(res) => res,
+					Err(_) => err!(),
+				});
+			},
 			"a" => scan_node(Instant::now(), try_parse_next_chunk!(SocketAddr)),
 			"r" => {
 				match try_parse_next_chunk!(u8) {

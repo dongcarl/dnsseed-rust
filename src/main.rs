@@ -180,7 +180,7 @@ pub fn scan_node(scan_time: Instant, node: SocketAddr) {
 		} else {
 			assert!(state_lock.fail_reason != AddressState::Good);
 			let old_state = store.set_node_state(node, state_lock.fail_reason, 0);
-			if old_state != state_lock.fail_reason && state_lock.msg.0 != "" {
+			if old_state != state_lock.fail_reason && state_lock.msg.0 != "" && state_lock.msg.1 {
 				printer.add_line(format!("Updating {} from {} to {}", node, old_state.to_str(), &state_lock.msg.0), state_lock.msg.1);
 			}
 		}

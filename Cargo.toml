@@ -5,10 +5,14 @@ authors = ["matt"]
 edition = "2018"
 
 [dependencies]
-bitcoin = { git = "https://github.com/TheBlueMatt/rust-bitcoin", rev = "fbff0689f85da9ffa0969cad760cf2b4e903509e" }
+bitcoin = { git = "https://github.com/TheBlueMatt/rust-bitcoin", rev = "f86c4581b7a8656e525bec8e3259e1af322a0a5a" }
 bitcoin_hashes = "0.3"
 tokio = "0.1"
 bytes = "0.4"
 futures = "0.1"
 rand = "0.6"
 regex = "1"
+
+[profile.release]
+lto = true
+codegen-units = 1

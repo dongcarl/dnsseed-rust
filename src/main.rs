@@ -139,11 +139,13 @@ pub fn scan_node(scan_time: Instant, node: SocketAddr) {
 						state_lock.recvd_addrs = false;
 						return future::err(());
 					}
-					if let Err(_) = write.try_send(NetworkMessage::GetData(vec![Inventory {
-						inv_type: InvType::WitnessBlock,
-						hash: state_lock.request.1,
-					}])) {
-						return future::err(());
+					if !state_lock.recvd_addrs {
+						if let Err(_) = write.try_send(NetworkMessage::GetData(vec![Inventory {
+							inv_type: InvType::WitnessBlock,
+							hash: state_lock.request.1,
+						}])) {
+							return future::err(());
+						}
 					}
 					state_lock.recvd_addrs = true;
 					unsafe { DATA_STORE.as_ref().unwrap() }.add_fresh_nodes(&addrs);

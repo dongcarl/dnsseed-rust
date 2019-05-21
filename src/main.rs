@@ -173,13 +173,15 @@ pub fn scan_node(scan_time: Instant, node: SocketAddr) {
 		let state_lock = final_peer_state.lock().unwrap();
 		if state_lock.recvd_version && state_lock.recvd_verack &&
 				state_lock.recvd_addrs && state_lock.recvd_block {
-			if store.set_node_state(node, AddressState::Good, state_lock.node_services) && state_lock.msg.0 != "" {
-				printer.add_line(state_lock.msg.0.clone(), state_lock.msg.1);
+			let old_state = store.set_node_state(node, AddressState::Good, state_lock.node_services);
+			if old_state != AddressState::Good && state_lock.msg.0 != "" {
+				printer.add_line(state_lock.msg.0.clone() + " from " + old_state.to_str(), state_lock.msg.1);
 			}
 		} else {
 			assert!(state_lock.fail_reason != AddressState::Good);
-			if store.set_node_state(node, state_lock.fail_reason, 0) && state_lock.msg.0 != "" {
-				printer.add_line(state_lock.msg.0.clone(), state_lock.msg.1);
+			let old_state = store.set_node_state(node, state_lock.fail_reason, 0);
+			if old_state != state_lock.fail_reason && state_lock.msg.0 != "" {
+				printer.add_line(state_lock.msg.0.clone() + " from " + old_state.to_str(), state_lock.msg.1);
 			}
 		}
 		future::ok(())

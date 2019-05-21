@@ -315,11 +315,11 @@ impl Store {
 		}
 	}
 
-	pub fn set_node_state(&self, addr: SocketAddr, state: AddressState, services: u64) -> bool {
+	pub fn set_node_state(&self, addr: SocketAddr, state: AddressState, services: u64) -> AddressState {
 		let mut nodes_lock = self.nodes.write().unwrap();
 		let nodes = nodes_lock.borrow_mut();
 		let state_ref = nodes.nodes_to_state.get_mut(&addr).unwrap();
-		let ret = state != state_ref.state;
+		let ret = state_ref.state;
 		let now = Instant::now();
 		if (state_ref.state == AddressState::Good || state_ref.state == AddressState::WasGood)
 				&& state != AddressState::Good

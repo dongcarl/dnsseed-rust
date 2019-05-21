@@ -113,7 +113,7 @@ impl Printer {
 		} else {
 			stats.lines.push_back(line);
 		}
-		if stats.lines.len() > 50 {
+		if stats.lines.len() > 75 {
 			stats.lines.pop_front();
 		}
 	}

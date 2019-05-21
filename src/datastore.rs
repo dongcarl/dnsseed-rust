@@ -270,10 +270,11 @@ impl Store {
 		}
 	}
 
-	pub fn set_node_state(&self, addr: SocketAddr, state: AddressState, services: u64) {
+	pub fn set_node_state(&self, addr: SocketAddr, state: AddressState, services: u64) -> bool {
 		let mut nodes_lock = self.nodes.write().unwrap();
 		let nodes = nodes_lock.borrow_mut();
 		let state_ref = nodes.nodes_to_state.get_mut(&addr).unwrap();
+		let ret = state != state_ref.state;
 		state_ref.last_update = Instant::now();
 		if (state_ref.state == AddressState::Good || state_ref.state == AddressState::WasGood)
 				&& state != AddressState::Good
@@ -301,6 +302,7 @@ impl Store {
 			}
 			nodes.state_next_scan.get_mut(&state).unwrap().push((state_ref.last_update, addr));
 		}
+		ret
 	}
 
 	pub fn save_data(&'static self) -> impl Future<Item=(), Error=()> {

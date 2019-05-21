@@ -35,13 +35,14 @@ static mut PRINTER: Option<Box<Printer>> = None;
 pub static START_SHUTDOWN: AtomicBool = AtomicBool::new(false);
 
 struct PeerState {
+	request: (u64, sha256d::Hash),
+	node_services: u64,
+	msg: (String, bool),
+	fail_reason: AddressState,
 	recvd_version: bool,
 	recvd_verack: bool,
 	recvd_addrs: bool,
 	recvd_block: bool,
-	node_services: u64,
-	fail_reason: AddressState,
-	request: (u64, sha256d::Hash),
 }
 
 pub fn scan_node(scan_time: Instant, node: SocketAddr) {
@@ -56,6 +57,7 @@ pub fn scan_node(scan_time: Instant, node: SocketAddr) {
 		recvd_block: false,
 		node_services: 0,
 		fail_reason: AddressState::Timeout,
+		msg: (String::new(), false),
 		request: (0, Default::default()),
 	}));
 	let final_peer_state = Arc::clone(&peer_state);
@@ -76,7 +78,7 @@ pub fn scan_node(scan_time: Instant, node: SocketAddr) {
 				($recvd_flag: ident, $msg: expr) => { {
 					if state_lock.$recvd_flag {
 						state_lock.fail_reason = AddressState::ProtocolViolation;
-						printer.add_line(format!("Updating {} to ProtocolViolation due to dup {}", node, $msg), true);
+						state_lock.msg = (format!("Updating {} to ProtocolViolation due to dup {}", node, $msg), true);
 						state_lock.$recvd_flag = false;
 						return future::err(());
 					}
@@ -90,29 +92,31 @@ pub fn scan_node(scan_time: Instant, node: SocketAddr) {
 						state_lock.fail_reason = AddressState::HighBlockCount;
 						return future::err(());
 					}
+					let safe_ua = ver.user_agent.replace(|c: char| !c.is_ascii() || c < ' ' || c > '~', "");
 					if (ver.start_height as u64) < state_lock.request.0 {
-						printer.add_line(format!("Updating {} to LowBlockCount ({} < {})", node, ver.start_height, state_lock.request.0), true);
+						state_lock.msg = (format!("Updating {} to LowBlockCount ({} < {})", node, ver.start_height, state_lock.request.0), true);
 						state_lock.fail_reason = AddressState::LowBlockCount;
 						return future::err(());
 					}
 					let min_version = store.get_u64(U64Setting::MinProtocolVersion);
 					if (ver.version as u64) < min_version {
-						printer.add_line(format!("Updating {} to LowVersion ({} < {})", node, ver.version, min_version), true);
+						state_lock.msg = (format!("Updating {} to LowVersion ({} < {})", node, ver.version, min_version), true);
 						state_lock.fail_reason = AddressState::LowVersion;
 						return future::err(());
 					}
 					if ver.services & (1 | (1 << 10)) == 0 {
-						printer.add_line(format!("Updating {} to NotFullNode ({}: services {:x})", node, ver.user_agent, ver.services), true);
+						state_lock.msg = (format!("Updating {} to NotFullNode ({}: services {:x})", node, safe_ua, ver.services), true);
 						state_lock.fail_reason = AddressState::NotFullNode;
 						return future::err(());
 					}
 					if !store.get_regex(RegexSetting::SubverRegex).is_match(&ver.user_agent) {
-						printer.add_line(format!("Updating {} to BadVersion subver {}", node, ver.user_agent.replace(|c: char| !c.is_ascii() || c < ' ' || c > '~', "")), true);
+						state_lock.msg = (format!("Updating {} to BadVersion subver {}", node, safe_ua), true);
 						state_lock.fail_reason = AddressState::BadVersion;
 						return future::err(());
 					}
 					check_set_flag!(recvd_version, "version");
 					state_lock.node_services = ver.services;
+					state_lock.msg = (format!("Updating {} to Good: {}", node, safe_ua), false);
 					if let Err(_) = write.try_send(NetworkMessage::Verack) {
 						return future::err(());
 					}
@@ -131,7 +135,7 @@ pub fn scan_node(scan_time: Instant, node: SocketAddr) {
 				NetworkMessage::Addr(addrs) => {
 					if addrs.len() > 1000 {
 						state_lock.fail_reason = AddressState::ProtocolViolation;
-						printer.add_line(format!("Updating {} to ProtocolViolation due to oversized addr: {}", node, addrs.len()), true);
+						state_lock.msg = (format!("Updating {} to ProtocolViolation due to oversized addr: {}", node, addrs.len()), true);
 						state_lock.recvd_addrs = false;
 						return future::err(());
 					}
@@ -148,7 +152,7 @@ pub fn scan_node(scan_time: Instant, node: SocketAddr) {
 					if block.header.bitcoin_hash() != state_lock.request.1 ||
 							!block.check_merkle_root() || !block.check_witness_commitment() {
 						state_lock.fail_reason = AddressState::ProtocolViolation;
-						printer.add_line(format!("Updating {} to ProtocolViolation due to bad block", node), true);
+						state_lock.msg = (format!("Updating {} to ProtocolViolation due to bad block", node), true);
 						return future::err(());
 					}
 					check_set_flag!(recvd_block, "block");
@@ -167,10 +171,14 @@ pub fn scan_node(scan_time: Instant, node: SocketAddr) {
 		let state_lock = final_peer_state.lock().unwrap();
 		if state_lock.recvd_version && state_lock.recvd_verack &&
 				state_lock.recvd_addrs && state_lock.recvd_block {
-			store.set_node_state(node, AddressState::Good, state_lock.node_services);
+			if store.set_node_state(node, AddressState::Good, state_lock.node_services) && state_lock.msg.0 != "" {
+				printer.add_line(state_lock.msg.0.clone(), state_lock.msg.1);
+			}
 		} else {
 			assert!(state_lock.fail_reason != AddressState::Good);
-			store.set_node_state(node, state_lock.fail_reason, 0);
+			if store.set_node_state(node, state_lock.fail_reason, 0) && state_lock.msg.0 != "" {
+				printer.add_line(state_lock.msg.0.clone(), state_lock.msg.1);
+			}
 		}
 		future::ok(())
 	}));

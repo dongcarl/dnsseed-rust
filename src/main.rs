@@ -102,7 +102,7 @@ pub fn scan_node(scan_time: Instant, node: SocketAddr) {
 						return future::err(());
 					}
 					if ver.services & (1 | (1 << 10)) == 0 {
-						printer.add_line(format!("Updating {} to NotFullNode (services {:x})", node, ver.services), true);
+						printer.add_line(format!("Updating {} to NotFullNode ({}: services {:x})", node, ver.user_agent, ver.services), true);
 						state_lock.fail_reason = AddressState::NotFullNode;
 						return future::err(());
 					}
@@ -122,12 +122,6 @@ pub fn scan_node(scan_time: Instant, node: SocketAddr) {
 					if let Err(_) = write.try_send(NetworkMessage::GetAddr) {
 						return future::err(());
 					}
-					if let Err(_) = write.try_send(NetworkMessage::GetData(vec![Inventory {
-						inv_type: InvType::WitnessBlock,
-						hash: state_lock.request.1,
-					}])) {
-						return future::err(());
-					}
 				},
 				NetworkMessage::Ping(v) => {
 					if let Err(_) = write.try_send(NetworkMessage::Pong(v)) {
@@ -139,6 +133,12 @@ pub fn scan_node(scan_time: Instant, node: SocketAddr) {
 						state_lock.fail_reason = AddressState::ProtocolViolation;
 						printer.add_line(format!("Updating {} to ProtocolViolation due to oversized addr: {}", node, addrs.len()), true);
 						state_lock.recvd_addrs = false;
+						return future::err(());
+					}
+					if let Err(_) = write.try_send(NetworkMessage::GetData(vec![Inventory {
+						inv_type: InvType::WitnessBlock,
+						hash: state_lock.request.1,
+					}])) {
 						return future::err(());
 					}
 					state_lock.recvd_addrs = true;

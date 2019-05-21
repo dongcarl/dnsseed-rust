@@ -230,6 +230,9 @@ fn make_trusted_conn(trusted_sockaddr: SocketAddr) {
 					starting_height = ver.start_height;
 				},
 				NetworkMessage::Verack => {
+					if let Err(_) = trusted_write.try_send(NetworkMessage::SendHeaders) {
+						return future::err(());
+					}
 					if let Err(_) = trusted_write.try_send(NetworkMessage::GetHeaders(GetHeadersMessage {
 						version: 70015,
 						locator_hashes: vec![unsafe { HIGHEST_HEADER.as_ref().unwrap() }.lock().unwrap().0.clone()],

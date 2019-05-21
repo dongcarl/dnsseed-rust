@@ -31,6 +31,57 @@ pub enum AddressState {
 	WasGood,
 }
 
+impl AddressState {
+	pub fn from_num(num: u8) -> Option<AddressState> {
+		match num {
+			0x0 => Some(AddressState::Untested),
+			0x1 => Some(AddressState::LowBlockCount),
+			0x2 => Some(AddressState::HighBlockCount),
+			0x3 => Some(AddressState::LowVersion),
+			0x4 => Some(AddressState::BadVersion),
+			0x5 => Some(AddressState::NotFullNode),
+			0x6 => Some(AddressState::ProtocolViolation),
+			0x7 => Some(AddressState::Timeout),
+			0x8 => Some(AddressState::TimeoutDuringRequest),
+			0x9 => Some(AddressState::Good),
+			0xa => Some(AddressState::WasGood),
+			_   => None,
+		}
+	}
+
+	pub fn to_num(&self) -> u8 {
+		match *self {
+			AddressState::Untested => 0,
+			AddressState::LowBlockCount => 1,
+			AddressState::HighBlockCount => 2,
+			AddressState::LowVersion => 3,
+			AddressState::BadVersion => 4,
+			AddressState::NotFullNode => 5,
+			AddressState::ProtocolViolation => 6,
+			AddressState::Timeout => 7,
+			AddressState::TimeoutDuringRequest => 8,
+			AddressState::Good => 9,
+			AddressState::WasGood => 10,
+		}
+	}
+
+	pub fn to_str(&self) -> &'static str {
+		match *self {
+			AddressState::Untested => "Untested",
+			AddressState::LowBlockCount => "Low Block Count",
+			AddressState::HighBlockCount => "High Block Count",
+			AddressState::LowVersion => "Low Version",
+			AddressState::BadVersion => "Bad Version",
+			AddressState::NotFullNode => "Not Full Node",
+			AddressState::ProtocolViolation => "Protocol Violation",
+			AddressState::Timeout => "Timeout",
+			AddressState::TimeoutDuringRequest => "Timeout During Request",
+			AddressState::Good => "Good",
+			AddressState::WasGood => "Was Good",
+		}
+	}
+}
+
 #[derive(Hash, PartialEq, Eq)]
 pub enum U64Setting {
 	ConnsPerSec,
@@ -185,19 +236,9 @@ impl Store {
 				let state = try_read!(line_iter, u8);
 				let last_services = try_read!(line_iter, u64);
 				let node = Node {
-					state: match state {
-						0x0 => AddressState::Untested,
-						0x1 => AddressState::LowBlockCount,
-						0x2 => AddressState::HighBlockCount,
-						0x3 => AddressState::LowVersion,
-						0x4 => AddressState::BadVersion,
-						0x5 => AddressState::NotFullNode,
-						0x6 => AddressState::ProtocolViolation,
-						0x7 => AddressState::Timeout,
-						0x8 => AddressState::TimeoutDuringRequest,
-						0x9 => AddressState::Good,
-						0xa => AddressState::WasGood,
-						_   => return future::ok(res),
+					state: match AddressState::from_num(state) {
+						Some(v) => v,
+						None => return future::ok(res),
 					},
 					last_services,
 					last_update: Instant::now(),
@@ -342,19 +383,7 @@ impl Store {
 				for (ref sockaddr, ref node) in nodes.nodes_to_state.iter() {
 					nodes_buff += &sockaddr.to_string();
 					nodes_buff += ",";
-					nodes_buff += &match node.state {
-						AddressState::Untested => 0u8,
-						AddressState::LowBlockCount => 1u8,
-						AddressState::HighBlockCount => 2u8,
-						AddressState::LowVersion => 3u8,
-						AddressState::BadVersion => 4u8,
-						AddressState::NotFullNode => 5u8,
-						AddressState::ProtocolViolation => 6u8,
-						AddressState::Timeout => 7u8,
-						AddressState::TimeoutDuringRequest => 8u8,
-						AddressState::Good => 9u8,
-						AddressState::WasGood => 10u8,
-					}.to_string();
+					nodes_buff += &node.state.to_num().to_string();
 					nodes_buff += ",";
 					nodes_buff += &node.last_services.to_string();
 					nodes_buff += "\n";

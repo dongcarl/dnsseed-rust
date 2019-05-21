@@ -33,6 +33,7 @@ static mut HEIGHT_MAP: Option<Box<Mutex<HashMap<u64, sha256d::Hash>>>> = None;
 static mut DATA_STORE: Option<Box<Store>> = None;
 static mut PRINTER: Option<Box<Printer>> = None;
 pub static START_SHUTDOWN: AtomicBool = AtomicBool::new(false);
+static SCANNING: AtomicBool = AtomicBool::new(false);
 
 struct PeerState {
 	request: (u64, sha256d::Hash),
@@ -263,7 +264,9 @@ fn make_trusted_conn(trusted_sockaddr: SocketAddr) {
 							= (headers.last().unwrap().bitcoin_hash(), top_height);
 						printer.set_stat(printer::Stat::HeaderCount(top_height));
 						if top_height >= starting_height as u64 {
-							scan_net();
+							if !SCANNING.swap(true, Ordering::SeqCst) {
+								scan_net();
+							}
 						}
 					} else {
 						// Wat? Lets start again...

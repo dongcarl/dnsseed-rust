@@ -149,9 +149,13 @@ impl Printer {
 		}
 	}
 
-	pub fn add_line(&self, line: String, _err: bool) {
+	pub fn add_line(&self, line: String, err: bool) {
 		let mut stats = self.stats.lock().unwrap();
-		stats.lines.push_back(line);
+		if err {
+			stats.lines.push_back("\x1b[31m".to_string() + &line + "\x1b[0m");
+		} else {
+			stats.lines.push_back(line);
+		}
 		if stats.lines.len() > 50 {
 			stats.lines.pop_front();
 		}

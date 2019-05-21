@@ -481,12 +481,15 @@ impl Store {
 	}
 
 	pub fn get_next_scan_nodes(&self) -> Vec<SocketAddr> {
-		let mut res = Vec::with_capacity(600);
+		let results = 30 * self.get_u64(U64Setting::ConnsPerSec) as usize;
+		let per_bucket_results = results / (AddressState::get_count() as usize);
+		let mut res = Vec::with_capacity(results);
 		let cur_time = Instant::now();
+
 		let mut nodes = self.nodes.write().unwrap();
 		for (state, state_nodes) in nodes.state_next_scan.iter_mut() {
 			let cmp_time = cur_time - Duration::from_secs(self.get_u64(U64Setting::RescanInterval(*state)));
-			let split_point = cmp::min(cmp::min(600 - res.len(), 60),
+			let split_point = cmp::min(cmp::min(results - res.len(), per_bucket_results),
 					state_nodes.binary_search_by(|a| a.0.cmp(&cmp_time)).unwrap_or_else(|idx| idx));
 			let mut new_nodes = state_nodes.split_off(split_point);
 			mem::swap(&mut new_nodes, state_nodes);

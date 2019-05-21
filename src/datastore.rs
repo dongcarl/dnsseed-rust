@@ -80,6 +80,10 @@ impl AddressState {
 			AddressState::WasGood => "Was Good",
 		}
 	}
+
+	pub fn get_count() -> u8 {
+		11
+	}
 }
 
 #[derive(Hash, PartialEq, Eq)]

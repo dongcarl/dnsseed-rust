@@ -50,28 +50,11 @@ impl Printer {
 				}
 
 				out.write_all(b"\nNode counts by status:\n").expect("stdout broken?");
-				out.write_all(format!("Untested:               {}\n", store.get_node_count(AddressState::Untested)
-						).as_bytes()).expect("stdout broken?");
-				out.write_all(format!("Low Block Count:        {}\n", store.get_node_count(AddressState::LowBlockCount)
-						).as_bytes()).expect("stdout broken?");
-				out.write_all(format!("High Block Count:       {}\n", store.get_node_count(AddressState::HighBlockCount)
-						).as_bytes()).expect("stdout broken?");
-				out.write_all(format!("Low Version:            {}\n", store.get_node_count(AddressState::LowVersion)
-						).as_bytes()).expect("stdout broken?");
-				out.write_all(format!("Bad Version:            {}\n", store.get_node_count(AddressState::BadVersion)
-						).as_bytes()).expect("stdout broken?");
-				out.write_all(format!("Not Full Node:          {}\n", store.get_node_count(AddressState::NotFullNode)
-						).as_bytes()).expect("stdout broken?");
-				out.write_all(format!("Protocol Violation:     {}\n", store.get_node_count(AddressState::ProtocolViolation)
-						).as_bytes()).expect("stdout broken?");
-				out.write_all(format!("Timeout:                {}\n", store.get_node_count(AddressState::Timeout)
-						).as_bytes()).expect("stdout broken?");
-				out.write_all(format!("Timeout During Request: {}\n", store.get_node_count(AddressState::TimeoutDuringRequest)
-						).as_bytes()).expect("stdout broken?");
-				out.write_all(format!("Good:                   {}\n", store.get_node_count(AddressState::Good)
-						).as_bytes()).expect("stdout broken?");
-				out.write_all(format!("WasGood:                {}\n", store.get_node_count(AddressState::WasGood)
-						).as_bytes()).expect("stdout broken?");
+				for i in 0..AddressState::get_count() {
+					out.write_all(format!("{}: {}\n", AddressState::from_num(i).unwrap().to_str(),
+							store.get_node_count(AddressState::from_num(i).unwrap())
+							).as_bytes()).expect("stdout broken?");
+				}
 
 				out.write_all(format!(
 						"\nCurrent connections open/in progress: {}\n", stats.connection_count).as_bytes()).expect("stdout broken?");
@@ -92,39 +75,12 @@ impl Printer {
 						).as_bytes()).expect("stdout broken?");
 
 				out.write_all(b"\nRetry times (in seconds):\n").expect("stdout broken?");
-				out.write_all(format!(
-						"Untested:               {}\n", store.get_u64(U64Setting::RescanInterval(AddressState::Untested))
-						).as_bytes()).expect("stdout broken?");
-				out.write_all(format!(
-						"Low Block Count:        {}\n", store.get_u64(U64Setting::RescanInterval(AddressState::LowBlockCount))
-						).as_bytes()).expect("stdout broken?");
-				out.write_all(format!(
-						"High Block Count        {}\n", store.get_u64(U64Setting::RescanInterval(AddressState::HighBlockCount))
-						).as_bytes()).expect("stdout broken?");
-				out.write_all(format!(
-						"Low Version:            {}\n", store.get_u64(U64Setting::RescanInterval(AddressState::LowVersion))
-						).as_bytes()).expect("stdout broken?");
-				out.write_all(format!(
-						"Bad Version:            {}\n", store.get_u64(U64Setting::RescanInterval(AddressState::BadVersion))
-						).as_bytes()).expect("stdout broken?");
-				out.write_all(format!(
-						"Not Full Node:          {}\n", store.get_u64(U64Setting::RescanInterval(AddressState::NotFullNode))
-						).as_bytes()).expect("stdout broken?");
-				out.write_all(format!(
-						"Protocol Violation:     {}\n", store.get_u64(U64Setting::RescanInterval(AddressState::ProtocolViolation))
-						).as_bytes()).expect("stdout broken?");
-				out.write_all(format!(
-						"Timeout:                {}\n", store.get_u64(U64Setting::RescanInterval(AddressState::Timeout))
-						).as_bytes()).expect("stdout broken?");
-				out.write_all(format!(
-						"Timeout During Request: {}\n", store.get_u64(U64Setting::RescanInterval(AddressState::TimeoutDuringRequest))
-						).as_bytes()).expect("stdout broken?");
-				out.write_all(format!(
-						"Good:                   {}\n", store.get_u64(U64Setting::RescanInterval(AddressState::Good))
-						).as_bytes()).expect("stdout broken?");
-				out.write_all(format!(
-						"Was Good:               {}\n", store.get_u64(U64Setting::RescanInterval(AddressState::WasGood))
-						).as_bytes()).expect("stdout broken?");
+				for i in 0..AddressState::get_count() {
+					out.write_all(format!(
+							"{} ({}): {}\n", AddressState::from_num(i).unwrap().to_str(), i,
+							store.get_u64(U64Setting::RescanInterval(AddressState::from_num(i).unwrap()))
+							).as_bytes()).expect("stdout broken?");
+				}
 
 				out.write_all(b"\nCommands:\n").expect("stdout broken?");
 				out.write_all(b"q: quit\n").expect("stdout broken?");

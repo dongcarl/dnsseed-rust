@@ -54,19 +54,9 @@ pub fn read(store: &'static Store, printer: &'static Printer) {
 			},
 			"a" => scan_node(Instant::now(), try_parse_next_chunk!(SocketAddr)),
 			"r" => {
-				match try_parse_next_chunk!(u8) {
-					0 => store.set_u64(U64Setting::RescanInterval(AddressState::Untested), try_parse_next_chunk!(u64)),
-					1 => store.set_u64(U64Setting::RescanInterval(AddressState::LowBlockCount), try_parse_next_chunk!(u64)),
-					2 => store.set_u64(U64Setting::RescanInterval(AddressState::HighBlockCount), try_parse_next_chunk!(u64)),
-					3 => store.set_u64(U64Setting::RescanInterval(AddressState::LowVersion), try_parse_next_chunk!(u64)),
-					4 => store.set_u64(U64Setting::RescanInterval(AddressState::BadVersion), try_parse_next_chunk!(u64)),
-					5 => store.set_u64(U64Setting::RescanInterval(AddressState::NotFullNode), try_parse_next_chunk!(u64)),
-					6 => store.set_u64(U64Setting::RescanInterval(AddressState::ProtocolViolation), try_parse_next_chunk!(u64)),
-					7 => store.set_u64(U64Setting::RescanInterval(AddressState::Timeout), try_parse_next_chunk!(u64)),
-					8 => store.set_u64(U64Setting::RescanInterval(AddressState::TimeoutDuringRequest), try_parse_next_chunk!(u64)),
-					9 => store.set_u64(U64Setting::RescanInterval(AddressState::Good), try_parse_next_chunk!(u64)),
-					10 => store.set_u64(U64Setting::RescanInterval(AddressState::WasGood), try_parse_next_chunk!(u64)),
-					_ => err!(),
+				match AddressState::from_num(try_parse_next_chunk!(u8)) {
+					Some(state) => store.set_u64(U64Setting::RescanInterval(state), try_parse_next_chunk!(u64)),
+					None => err!(),
 				}
 			},
 			"q" => {

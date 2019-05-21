@@ -292,27 +292,35 @@ impl Store {
 		*self.subver_regex.write().unwrap() = Arc::new(value);
 	}
 
-	pub fn add_fresh_nodes(&self, addresses: &Vec<(u32, Address)>) {
+	pub fn add_fresh_addrs<I: Iterator<Item=SocketAddr>>(&self, addresses: I) -> u64 {
+		let mut res = 0;
 		let mut nodes = self.nodes.write().unwrap();
 		let cur_time = Instant::now();
-		for &(_, ref addr) in addresses {
-			if let Ok(socketaddr) = addr.socket_addr() {
-				match nodes.nodes_to_state.entry(socketaddr.clone()) {
-					hash_map::Entry::Vacant(e) => {
-						e.insert(Node {
-							state: AddressState::Untested,
-							last_services: 0,
-							last_update: cur_time,
-							last_good: Instant::now(),
-						});
-						nodes.state_next_scan.get_mut(&AddressState::Untested).unwrap().push((cur_time, socketaddr));
-					},
-					hash_map::Entry::Occupied(_) => {},
-				}
-			} else {
-				//TODO: Handle onions
+		for addr in addresses {
+			match nodes.nodes_to_state.entry(addr.clone()) {
+				hash_map::Entry::Vacant(e) => {
+					e.insert(Node {
+						state: AddressState::Untested,
+						last_services: 0,
+						last_update: cur_time,
+						last_good: Instant::now(),
+					});
+					nodes.state_next_scan.get_mut(&AddressState::Untested).unwrap().push((cur_time, addr));
+					res += 1;
+				},
+				hash_map::Entry::Occupied(_) => {},
 			}
 		}
+		res
+	}
+
+	pub fn add_fresh_nodes(&self, addresses: &Vec<(u32, Address)>) {
+		self.add_fresh_addrs(addresses.iter().filter_map(|(_, addr)| {
+			match addr.socket_addr() {
+				Ok(socketaddr) => Some(socketaddr),
+				Err(_) => None, // TODO: Handle onions
+			}
+		}));
 	}
 
 	pub fn set_node_state(&self, addr: SocketAddr, state: AddressState, services: u64) -> AddressState {

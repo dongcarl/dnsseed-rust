@@ -9,7 +9,7 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::sync::atomic::{Ordering, AtomicBool};
 use std::time::{Duration, Instant};
-use std::net::SocketAddr;
+use std::net::{SocketAddr, ToSocketAddrs};
 
 use bitcoin_hashes::sha256d;
 
@@ -189,9 +189,30 @@ pub fn scan_node(scan_time: Instant, node: SocketAddr) {
 	}));
 }
 
+fn poll_dnsseeds() {
+	tokio::spawn(future::lazy(|| {
+		let printer = unsafe { PRINTER.as_ref().unwrap() };
+		let store = unsafe { DATA_STORE.as_ref().unwrap() };
+
+		let mut new_addrs = 0;
+		for seed in ["seed.bitcoin.sipa.be", "dnsseed.bitcoin.dashjr.org", "seed.bitcoinstats.com", "seed.bitcoin.jonasschnelli.ch", "seed.btc.petertodd.org", "seed.bitcoin.sprovoost.nl", "dnsseed.emzy.de"].iter() {
+			new_addrs += store.add_fresh_addrs((*seed, 8333u16).to_socket_addrs().unwrap_or(Vec::new().into_iter()));
+			new_addrs += store.add_fresh_addrs((("x9.".to_string() + seed).as_str(), 8333u16).to_socket_addrs().unwrap_or(Vec::new().into_iter()));
+		}
+		printer.add_line(format!("Added {} new addresses from other DNS seeds", new_addrs), false);
+		Delay::new(Instant::now() + Duration::from_secs(60)).then(|_| {
+			if !START_SHUTDOWN.load(Ordering::Relaxed) {
+				poll_dnsseeds();
+			}
+			future::ok(())
+		})
+	}));
+}
+
 fn scan_net() {
 	tokio::spawn(future::lazy(|| {
 		let store = unsafe { DATA_STORE.as_ref().unwrap() };
+
 		let mut scan_nodes = store.get_next_scan_nodes();
 		let per_iter_time = Duration::from_millis(1000 / store.get_u64(U64Setting::ConnsPerSec));
 		let start_time = Instant::now();
@@ -270,6 +291,7 @@ fn make_trusted_conn(trusted_sockaddr: SocketAddr) {
 						if top_height >= starting_height as u64 {
 							if !SCANNING.swap(true, Ordering::SeqCst) {
 								scan_net();
+								poll_dnsseeds();
 							}
 						}
 					} else {

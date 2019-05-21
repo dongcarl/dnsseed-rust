@@ -487,9 +487,9 @@ impl Store {
 		let cur_time = Instant::now();
 
 		let mut nodes = self.nodes.write().unwrap();
-		for (state, state_nodes) in nodes.state_next_scan.iter_mut() {
+		for (idx, (state, state_nodes)) in nodes.state_next_scan.iter_mut().enumerate() {
 			let cmp_time = cur_time - Duration::from_secs(self.get_u64(U64Setting::RescanInterval(*state)));
-			let split_point = cmp::min(cmp::min(results - res.len(), per_bucket_results),
+			let split_point = cmp::min(cmp::min(results - res.len(), results - (per_bucket_results * (AddressState::get_count() as usize - idx))),
 					state_nodes.binary_search_by(|a| a.0.cmp(&cmp_time)).unwrap_or_else(|idx| idx));
 			let mut new_nodes = state_nodes.split_off(split_point);
 			mem::swap(&mut new_nodes, state_nodes);

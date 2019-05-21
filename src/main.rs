@@ -4,7 +4,7 @@ mod peer;
 mod timeout_stream;
 mod datastore;
 
-use std::env;
+use std::{cmp, env};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::sync::atomic::{Ordering, AtomicBool};
@@ -194,13 +194,14 @@ fn scan_net() {
 		let store = unsafe { DATA_STORE.as_ref().unwrap() };
 		let mut scan_nodes = store.get_next_scan_nodes();
 		let per_iter_time = Duration::from_millis(1000 / store.get_u64(U64Setting::ConnsPerSec));
-		let mut iter_time = Instant::now();
+		let start_time = Instant::now();
+		let mut iter_time = start_time;
 
 		for node in scan_nodes.drain(..) {
 			scan_node(iter_time, node);
 			iter_time += per_iter_time;
 		}
-		Delay::new(iter_time).then(|_| {
+		Delay::new(cmp::max(iter_time, start_time + Duration::from_secs(15))).then(|_| {
 			let store = unsafe { DATA_STORE.as_ref().unwrap() };
 			store.save_data().then(|_| {
 				if !START_SHUTDOWN.load(Ordering::Relaxed) {

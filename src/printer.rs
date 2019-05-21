@@ -51,7 +51,7 @@ impl Printer {
 
 				out.write_all(b"\nNode counts by status:\n").expect("stdout broken?");
 				for i in 0..AddressState::get_count() {
-					out.write_all(format!("{}: {}\n", AddressState::from_num(i).unwrap().to_str(),
+					out.write_all(format!("{:22}: {}\n", AddressState::from_num(i).unwrap().to_str(),
 							store.get_node_count(AddressState::from_num(i).unwrap())
 							).as_bytes()).expect("stdout broken?");
 				}
@@ -77,7 +77,7 @@ impl Printer {
 				out.write_all(b"\nRetry times (in seconds):\n").expect("stdout broken?");
 				for i in 0..AddressState::get_count() {
 					out.write_all(format!(
-							"{} ({}): {}\n", AddressState::from_num(i).unwrap().to_str(), i,
+							"{:22} ({}): {}\n", AddressState::from_num(i).unwrap().to_str(), i,
 							store.get_u64(U64Setting::RescanInterval(AddressState::from_num(i).unwrap()))
 							).as_bytes()).expect("stdout broken?");
 				}

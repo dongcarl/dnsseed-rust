@@ -78,8 +78,8 @@ impl Printer {
 				for i in 0..AddressState::get_count() {
 					let scan_secs = store.get_u64(U64Setting::RescanInterval(AddressState::from_num(i).unwrap()));
 					out.write_all(format!(
-							"{:22} ({:2}): {:5} (ie {} min, {} hrs)\n", AddressState::from_num(i).unwrap().to_str(), i,
-							scan_secs, scan_secs / 60, scan_secs / 60 / 60,
+							"{:22} ({:2}): {:5} (ie {} hrs, {} min)\n", AddressState::from_num(i).unwrap().to_str(), i,
+							scan_secs, scan_secs / 60 / 60, (scan_secs / 60) % 60,
 							).as_bytes()).expect("stdout broken?");
 				}
 

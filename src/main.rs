@@ -13,6 +13,7 @@ use std::net::{SocketAddr, ToSocketAddrs};
 
 use bitcoin_hashes::sha256d;
 
+use bitcoin::blockdata::block::Block;
 use bitcoin::blockdata::constants::genesis_block;
 use bitcoin::network::constants::Network;
 use bitcoin::network::message::NetworkMessage;
@@ -27,6 +28,7 @@ use timeout_stream::TimeoutStream;
 use tokio::prelude::*;
 use tokio::timer::Delay;
 
+static mut REQUEST_BLOCK: Option<Box<Mutex<Arc<(u64, sha256d::Hash, Block)>>>> = None;
 static mut HIGHEST_HEADER: Option<Box<Mutex<(sha256d::Hash, u64)>>> = None;
 static mut HEADER_MAP: Option<Box<Mutex<HashMap<sha256d::Hash, u64>>>> = None;
 static mut HEIGHT_MAP: Option<Box<Mutex<HashMap<u64, sha256d::Hash>>>> = None;
@@ -36,7 +38,7 @@ pub static START_SHUTDOWN: AtomicBool = AtomicBool::new(false);
 static SCANNING: AtomicBool = AtomicBool::new(false);
 
 struct PeerState {
-	request: (u64, sha256d::Hash),
+	request: Arc<(u64, sha256d::Hash, Block)>,
 	node_services: u64,
 	msg: (String, bool),
 	fail_reason: AddressState,
@@ -59,7 +61,7 @@ pub fn scan_node(scan_time: Instant, node: SocketAddr) {
 		node_services: 0,
 		fail_reason: AddressState::Timeout,
 		msg: (String::new(), false),
-		request: (0, Default::default()),
+		request: Arc::clone(&unsafe { REQUEST_BLOCK.as_ref().unwrap() }.lock().unwrap()),
 	}));
 	let final_peer_state = Arc::clone(&peer_state);
 
@@ -69,10 +71,6 @@ pub fn scan_node(scan_time: Instant, node: SocketAddr) {
 		Peer::new(node.clone(), Duration::from_secs(timeout), printer)
 	});
 	tokio::spawn(peer.and_then(move |(mut write, read)| {
-		let requested_height = unsafe { HIGHEST_HEADER.as_ref().unwrap() }.lock().unwrap().1 - 1008;
-		let requested_block = unsafe { HEIGHT_MAP.as_ref().unwrap() }.lock().unwrap().get(&requested_height).unwrap().clone();
-		peer_state.lock().unwrap().request = (requested_height, requested_block);
-
 		TimeoutStream::new_timeout(read, scan_time + Duration::from_secs(store.get_u64(U64Setting::RunTimeout))).map_err(|_| { () }).for_each(move |msg| {
 			let mut state_lock = peer_state.lock().unwrap();
 			macro_rules! check_set_flag {
@@ -152,8 +150,7 @@ pub fn scan_node(scan_time: Instant, node: SocketAddr) {
 					unsafe { DATA_STORE.as_ref().unwrap() }.add_fresh_nodes(&addrs);
 				},
 				NetworkMessage::Block(block) => {
-					if block.header.bitcoin_hash() != state_lock.request.1 ||
-							!block.check_merkle_root() || !block.check_witness_commitment() {
+					if block != state_lock.request.2 {
 						state_lock.fail_reason = AddressState::ProtocolViolation;
 						state_lock.msg = ("ProtocolViolation due to bad block".to_string(), true);
 						return future::err(());
@@ -278,6 +275,7 @@ fn make_trusted_conn(trusted_sockaddr: SocketAddr) {
 					}
 					let mut header_map = unsafe { HEADER_MAP.as_ref().unwrap() }.lock().unwrap();
 					let mut height_map = unsafe { HEIGHT_MAP.as_ref().unwrap() }.lock().unwrap();
+
 					if let Some(height) = header_map.get(&headers[0].prev_blockhash).cloned() {
 						for i in 0..headers.len() {
 							let hash = headers[i].bitcoin_hash();
@@ -287,14 +285,18 @@ fn make_trusted_conn(trusted_sockaddr: SocketAddr) {
 							header_map.insert(headers[i].bitcoin_hash(), height + 1 + (i as u64));
 							height_map.insert(height + 1 + (i as u64), headers[i].bitcoin_hash());
 						}
+
 						let top_height = height + headers.len() as u64;
 						*unsafe { HIGHEST_HEADER.as_ref().unwrap() }.lock().unwrap()
 							= (headers.last().unwrap().bitcoin_hash(), top_height);
 						printer.set_stat(printer::Stat::HeaderCount(top_height));
+
 						if top_height >= starting_height as u64 {
-							if !SCANNING.swap(true, Ordering::SeqCst) {
-								scan_net();
-								poll_dnsseeds();
+							if let Err(_) = trusted_write.try_send(NetworkMessage::GetData(vec![Inventory {
+								inv_type: InvType::WitnessBlock,
+								hash: height_map.get(&(top_height - 1008)).unwrap().clone(),
+							}])) {
+								return future::err(());
 							}
 						}
 					} else {
@@ -307,6 +309,18 @@ fn make_trusted_conn(trusted_sockaddr: SocketAddr) {
 						stop_hash: Default::default(),
 					})) {
 						return future::err(())
+					}
+				},
+				NetworkMessage::Block(block) => {
+					let hash = block.header.bitcoin_hash();
+					let header_map = unsafe { HEADER_MAP.as_ref().unwrap() }.lock().unwrap();
+					let height = *header_map.get(&hash).expect("Got loose block from trusted peer we coulnd't have requested");
+					if height == unsafe { HIGHEST_HEADER.as_ref().unwrap() }.lock().unwrap().1 - 1008 {
+						*unsafe { REQUEST_BLOCK.as_ref().unwrap() }.lock().unwrap() = Arc::new((height, hash, block));
+						if !SCANNING.swap(true, Ordering::SeqCst) {
+							scan_net();
+							poll_dnsseeds();
+						}
 					}
 				},
 				NetworkMessage::Ping(v) => {
@@ -340,6 +354,7 @@ fn main() {
 	unsafe { HEADER_MAP.as_ref().unwrap() }.lock().unwrap().insert(genesis_block(Network::Bitcoin).bitcoin_hash(), 0);
 	unsafe { HEIGHT_MAP.as_ref().unwrap() }.lock().unwrap().insert(0, genesis_block(Network::Bitcoin).bitcoin_hash());
 	unsafe { HIGHEST_HEADER = Some(Box::new(Mutex::new((genesis_block(Network::Bitcoin).bitcoin_hash(), 0)))) };
+	unsafe { REQUEST_BLOCK = Some(Box::new(Mutex::new(Arc::new((0, genesis_block(Network::Bitcoin).bitcoin_hash(), genesis_block(Network::Bitcoin)))))) };
 
 	tokio::run(future::lazy(|| {
 		let mut args = env::args();

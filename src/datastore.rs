@@ -303,7 +303,7 @@ impl Store {
 						state: AddressState::Untested,
 						last_services: 0,
 						last_update: cur_time,
-						last_good: Instant::now(),
+						last_good: cur_time,
 					});
 					nodes.state_next_scan.get_mut(&AddressState::Untested).unwrap().push((cur_time, addr));
 					res += 1;
@@ -326,9 +326,15 @@ impl Store {
 	pub fn set_node_state(&self, addr: SocketAddr, state: AddressState, services: u64) -> AddressState {
 		let mut nodes_lock = self.nodes.write().unwrap();
 		let nodes = nodes_lock.borrow_mut();
-		let state_ref = nodes.nodes_to_state.get_mut(&addr).unwrap();
-		let ret = state_ref.state;
 		let now = Instant::now();
+
+		let state_ref = nodes.nodes_to_state.entry(addr).or_insert(Node {
+			state: AddressState::Untested,
+			last_services: 0,
+			last_update: now,
+			last_good: now,
+		});
+		let ret = state_ref.state;
 		if (state_ref.state == AddressState::Good || state_ref.state == AddressState::WasGood)
 				&& state != AddressState::Good
 				&& state_ref.last_good >= now - Duration::from_secs(self.get_u64(U64Setting::WasGoodTimeout)) {

@@ -356,7 +356,11 @@ fn main() {
 	unsafe { HIGHEST_HEADER = Some(Box::new(Mutex::new((genesis_block(Network::Bitcoin).bitcoin_hash(), 0)))) };
 	unsafe { REQUEST_BLOCK = Some(Box::new(Mutex::new(Arc::new((0, genesis_block(Network::Bitcoin).bitcoin_hash(), genesis_block(Network::Bitcoin)))))) };
 
-	tokio::run(future::lazy(|| {
+	let trt = tokio::runtime::Builder::new()
+		.blocking_threads(2).core_threads(num_cpus::get().max(1) * 3)
+		.build().unwrap();
+
+	let _ = trt.block_on_all(future::lazy(|| {
 		let mut args = env::args();
 		args.next();
 		let path = args.next().unwrap();

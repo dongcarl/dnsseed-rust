@@ -52,7 +52,7 @@ pub fn read(store: &'static Store, printer: &'static Printer) {
 					Err(_) => err!(),
 				});
 			},
-			"a" => scan_node(Instant::now(), try_parse_next_chunk!(SocketAddr)),
+			"a" => scan_node(Instant::now(), try_parse_next_chunk!(SocketAddr), true),
 			"r" => {
 				match AddressState::from_num(try_parse_next_chunk!(u8)) {
 					Some(state) => store.set_u64(U64Setting::RescanInterval(state), try_parse_next_chunk!(u64)),

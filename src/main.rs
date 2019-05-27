@@ -48,7 +48,7 @@ struct PeerState {
 	recvd_block: bool,
 }
 
-pub fn scan_node(scan_time: Instant, node: SocketAddr) {
+pub fn scan_node(scan_time: Instant, node: SocketAddr, manual: bool) {
 	if START_SHUTDOWN.load(Ordering::Relaxed) { return; }
 	let printer = unsafe { PRINTER.as_ref().unwrap() };
 	let store = unsafe { DATA_STORE.as_ref().unwrap() };
@@ -77,7 +77,7 @@ pub fn scan_node(scan_time: Instant, node: SocketAddr) {
 				($recvd_flag: ident, $msg: expr) => { {
 					if state_lock.$recvd_flag {
 						state_lock.fail_reason = AddressState::ProtocolViolation;
-						state_lock.msg = (format!("ProtocolViolation due to dup {}", $msg), true);
+						state_lock.msg = (format!("due to dup {}", $msg), true);
 						state_lock.$recvd_flag = false;
 						return future::err(());
 					}
@@ -93,29 +93,29 @@ pub fn scan_node(scan_time: Instant, node: SocketAddr) {
 					}
 					let safe_ua = ver.user_agent.replace(|c: char| !c.is_ascii() || c < ' ' || c > '~', "");
 					if (ver.start_height as u64) < state_lock.request.0 {
-						state_lock.msg = (format!("LowBlockCount ({} < {})", ver.start_height, state_lock.request.0), true);
+						state_lock.msg = (format!("({} < {})", ver.start_height, state_lock.request.0), true);
 						state_lock.fail_reason = AddressState::LowBlockCount;
 						return future::err(());
 					}
 					let min_version = store.get_u64(U64Setting::MinProtocolVersion);
 					if (ver.version as u64) < min_version {
-						state_lock.msg = (format!("LowVersion ({} < {})", ver.version, min_version), true);
+						state_lock.msg = (format!("({} < {})", ver.version, min_version), true);
 						state_lock.fail_reason = AddressState::LowVersion;
 						return future::err(());
 					}
 					if ver.services & (1 | (1 << 10)) == 0 {
-						state_lock.msg = (format!("NotFullNode ({}: services {:x})", safe_ua, ver.services), true);
+						state_lock.msg = (format!("({}: services {:x})", safe_ua, ver.services), true);
 						state_lock.fail_reason = AddressState::NotFullNode;
 						return future::err(());
 					}
 					if !store.get_regex(RegexSetting::SubverRegex).is_match(&ver.user_agent) {
-						state_lock.msg = (format!("BadVersion subver {}", safe_ua), true);
+						state_lock.msg = (format!("subver {}", safe_ua), true);
 						state_lock.fail_reason = AddressState::BadVersion;
 						return future::err(());
 					}
 					check_set_flag!(recvd_version, "version");
 					state_lock.node_services = ver.services;
-					state_lock.msg = (format!("to Good: {}", safe_ua), false);
+					state_lock.msg = (format!("(subver: {})", safe_ua), false);
 					if let Err(_) = write.try_send(NetworkMessage::Verack) {
 						return future::err(());
 					}
@@ -134,7 +134,7 @@ pub fn scan_node(scan_time: Instant, node: SocketAddr) {
 				NetworkMessage::Addr(addrs) => {
 					if addrs.len() > 1000 {
 						state_lock.fail_reason = AddressState::ProtocolViolation;
-						state_lock.msg = (format!("ProtocolViolation due to oversized addr: {}", addrs.len()), true);
+						state_lock.msg = (format!("due to oversized addr: {}", addrs.len()), true);
 						state_lock.recvd_addrs = false;
 						return future::err(());
 					}
@@ -152,7 +152,7 @@ pub fn scan_node(scan_time: Instant, node: SocketAddr) {
 				NetworkMessage::Block(block) => {
 					if block != state_lock.request.2 {
 						state_lock.fail_reason = AddressState::ProtocolViolation;
-						state_lock.msg = ("ProtocolViolation due to bad block".to_string(), true);
+						state_lock.msg = ("due to bad block".to_string(), true);
 						return future::err(());
 					}
 					check_set_flag!(recvd_block, "block");
@@ -172,17 +172,17 @@ pub fn scan_node(scan_time: Instant, node: SocketAddr) {
 		if state_lock.recvd_version && state_lock.recvd_verack &&
 				state_lock.recvd_addrs && state_lock.recvd_block {
 			let old_state = store.set_node_state(node, AddressState::Good, state_lock.node_services);
-			if old_state != AddressState::Good && state_lock.msg.0 != "" {
-				printer.add_line(format!("Updating {} from {} to {}", node, old_state.to_str(), &state_lock.msg.0), state_lock.msg.1);
+			if manual || (old_state != AddressState::Good && state_lock.msg.0 != "") {
+				printer.add_line(format!("Updating {} from {} to Good {}", node, old_state.to_str(), &state_lock.msg.0), state_lock.msg.1);
 			}
 		} else {
 			assert!(state_lock.fail_reason != AddressState::Good);
 			let old_state = store.set_node_state(node, state_lock.fail_reason, 0);
-			if old_state != state_lock.fail_reason && state_lock.msg.0 != "" && state_lock.msg.1 {
-				printer.add_line(format!("Updating {} from {} to {}", node, old_state.to_str(), &state_lock.msg.0), state_lock.msg.1);
-			} else if old_state != state_lock.fail_reason && state_lock.fail_reason == AddressState::TimeoutDuringRequest {
+			if (manual || old_state != state_lock.fail_reason) && state_lock.fail_reason == AddressState::TimeoutDuringRequest {
 				printer.add_line(format!("Updating {} from {} to Timeout During Request (ver: {}, vack: {}, addr: {}, block: {})",
 					node, old_state.to_str(), state_lock.recvd_version, state_lock.recvd_verack, state_lock.recvd_addrs, state_lock.recvd_block), true);
+			} else if manual || (old_state != state_lock.fail_reason && state_lock.msg.0 != "" && state_lock.msg.1) {
+				printer.add_line(format!("Updating {} from {} to {} {}", node, old_state.to_str(), state_lock.fail_reason.to_str(), &state_lock.msg.0), state_lock.msg.1);
 			}
 		}
 		future::ok(())
@@ -219,7 +219,7 @@ fn scan_net() {
 		let mut iter_time = start_time;
 
 		for node in scan_nodes.drain(..) {
-			scan_node(iter_time, node);
+			scan_node(iter_time, node, false);
 			iter_time += per_iter_time;
 		}
 		Delay::new(cmp::max(iter_time, start_time + Duration::from_secs(15))).then(|_| {

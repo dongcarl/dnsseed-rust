@@ -110,12 +110,12 @@ struct Node {
 struct Nodes {
 	good_node_services: HashMap<u8, HashSet<SocketAddr>>,
 	nodes_to_state: HashMap<SocketAddr, Node>,
-	state_next_scan: HashMap<AddressState, Vec<(Instant, SocketAddr)>>,
+	state_next_scan: Vec<Vec<(Instant, SocketAddr)>>,
 }
 struct NodesMutRef<'a> {
 	good_node_services: &'a mut HashMap<u8, HashSet<SocketAddr>>,
 	nodes_to_state: &'a mut HashMap<SocketAddr, Node>,
-	state_next_scan: &'a mut HashMap<AddressState, Vec<(Instant, SocketAddr)>>,
+	state_next_scan: &'a mut Vec<Vec<(Instant, SocketAddr)>>,
 
 }
 impl Nodes {
@@ -192,18 +192,10 @@ impl Store {
 
 		macro_rules! nodes_uninitd {
 			() => { {
-				let mut state_vecs = HashMap::with_capacity(11);
-				state_vecs.insert(AddressState::Untested, Vec::new());
-				state_vecs.insert(AddressState::LowBlockCount, Vec::new());
-				state_vecs.insert(AddressState::HighBlockCount, Vec::new());
-				state_vecs.insert(AddressState::LowVersion, Vec::new());
-				state_vecs.insert(AddressState::BadVersion, Vec::new());
-				state_vecs.insert(AddressState::NotFullNode, Vec::new());
-				state_vecs.insert(AddressState::ProtocolViolation, Vec::new());
-				state_vecs.insert(AddressState::Timeout, Vec::new());
-				state_vecs.insert(AddressState::TimeoutDuringRequest, Vec::new());
-				state_vecs.insert(AddressState::Good, Vec::new());
-				state_vecs.insert(AddressState::WasGood, Vec::new());
+				let mut state_vecs = Vec::with_capacity(AddressState::get_count() as usize);
+				for _ in 0..AddressState::get_count() {
+					state_vecs.push(Vec::new());
+				}
 				let mut good_node_services = HashMap::with_capacity(64);
 				for i in 0..64 {
 					good_node_services.insert(i, HashSet::new());
@@ -255,7 +247,7 @@ impl Store {
 						}
 					}
 				}
-				res.state_next_scan.get_mut(&node.state).unwrap().push((Instant::now(), sockaddr));
+				res.state_next_scan[node.state.to_num() as usize].push((Instant::now(), sockaddr));
 				res.nodes_to_state.insert(sockaddr, node);
 			}
 			future::ok(res)
@@ -281,7 +273,7 @@ impl Store {
 	}
 
 	pub fn get_node_count(&self, state: AddressState) -> usize {
-		self.nodes.read().unwrap().state_next_scan.get(&state).unwrap().len()
+		self.nodes.read().unwrap().state_next_scan[state.to_num() as usize].len()
 	}
 
 	pub fn get_regex(&self, _setting: RegexSetting) -> Arc<Regex> {
@@ -305,7 +297,7 @@ impl Store {
 						last_update: cur_time,
 						last_good: cur_time,
 					});
-					nodes.state_next_scan.get_mut(&AddressState::Untested).unwrap().push((cur_time, addr));
+					nodes.state_next_scan[AddressState::Untested.to_num() as usize].push((cur_time, addr));
 					res += 1;
 				},
 				hash_map::Entry::Occupied(_) => {},
@@ -345,7 +337,7 @@ impl Store {
 				}
 			}
 			state_ref.last_services = 0;
-			nodes.state_next_scan.get_mut(&AddressState::WasGood).unwrap().push((now, addr));
+			nodes.state_next_scan[AddressState::WasGood.to_num() as usize].push((now, addr));
 		} else {
 			state_ref.state = state;
 			if state == AddressState::Good {
@@ -359,7 +351,7 @@ impl Store {
 				state_ref.last_services = services;
 				state_ref.last_good = now;
 			}
-			nodes.state_next_scan.get_mut(&state).unwrap().push((now, addr));
+			nodes.state_next_scan[state.to_num() as usize].push((now, addr));
 		}
 		state_ref.last_update = now;
 		ret
@@ -501,8 +493,8 @@ impl Store {
 		let cur_time = Instant::now();
 
 		let mut nodes = self.nodes.write().unwrap();
-		for (idx, (state, state_nodes)) in nodes.state_next_scan.iter_mut().enumerate() {
-			let cmp_time = cur_time - Duration::from_secs(self.get_u64(U64Setting::RescanInterval(*state)));
+		for (idx, state_nodes) in nodes.state_next_scan.iter_mut().enumerate() {
+			let cmp_time = cur_time - Duration::from_secs(self.get_u64(U64Setting::RescanInterval(AddressState::from_num(idx as u8).unwrap())));
 			let split_point = cmp::min(cmp::min(results - res.len(), results - (per_bucket_results * (AddressState::get_count() as usize - idx))),
 					state_nodes.binary_search_by(|a| a.0.cmp(&cmp_time)).unwrap_or_else(|idx| idx));
 			let mut new_nodes = state_nodes.split_off(split_point);

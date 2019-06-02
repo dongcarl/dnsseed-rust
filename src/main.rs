@@ -156,6 +156,7 @@ pub fn scan_node(scan_time: Instant, node: SocketAddr, manual: bool) {
 						return future::err(());
 					}
 					check_set_flag!(recvd_block, "block");
+					return future::err(());
 				},
 				_ => {},
 			}

@@ -108,12 +108,12 @@ struct Node {
 }
 
 struct Nodes {
-	good_node_services: HashMap<u8, HashSet<SocketAddr>>,
+	good_node_services: Vec<HashSet<SocketAddr>>,
 	nodes_to_state: HashMap<SocketAddr, Node>,
 	state_next_scan: Vec<Vec<(Instant, SocketAddr)>>,
 }
 struct NodesMutRef<'a> {
-	good_node_services: &'a mut HashMap<u8, HashSet<SocketAddr>>,
+	good_node_services: &'a mut Vec<HashSet<SocketAddr>>,
 	nodes_to_state: &'a mut HashMap<SocketAddr, Node>,
 	state_next_scan: &'a mut Vec<Vec<(Instant, SocketAddr)>>,
 
@@ -196,9 +196,9 @@ impl Store {
 				for _ in 0..AddressState::get_count() {
 					state_vecs.push(Vec::new());
 				}
-				let mut good_node_services = HashMap::with_capacity(64);
-				for i in 0..64 {
-					good_node_services.insert(i, HashSet::new());
+				let mut good_node_services = Vec::with_capacity(64);
+				for _ in 0..64 {
+					good_node_services.push(HashSet::new());
 				}
 				Nodes {
 					good_node_services,
@@ -243,7 +243,7 @@ impl Store {
 				if node.state == AddressState::Good {
 					for i in 0..64 {
 						if node.last_services & (1 << i) != 0 {
-							res.good_node_services.get_mut(&i).unwrap().insert(sockaddr);
+							res.good_node_services[i].insert(sockaddr);
 						}
 					}
 				}
@@ -333,7 +333,7 @@ impl Store {
 			state_ref.state = AddressState::WasGood;
 			for i in 0..64 {
 				if state_ref.last_services & (1 << i) != 0 {
-					nodes.good_node_services.get_mut(&i).unwrap().remove(&addr);
+					nodes.good_node_services[i].remove(&addr);
 				}
 			}
 			state_ref.last_services = 0;
@@ -343,9 +343,9 @@ impl Store {
 			if state == AddressState::Good {
 				for i in 0..64 {
 					if services & (1 << i) != 0 && state_ref.last_services & (1 << i) == 0 {
-						nodes.good_node_services.get_mut(&i).unwrap().insert(addr);
+						nodes.good_node_services[i].insert(addr);
 					} else if services & (1 << i) == 0 && state_ref.last_services & (1 << i) != 0 {
-						nodes.good_node_services.get_mut(&i).unwrap().remove(&addr);
+						nodes.good_node_services[i].remove(&addr);
 					}
 				}
 				state_ref.last_services = services;
@@ -418,7 +418,7 @@ impl Store {
 					if i.count_ones() == 1 {
 						for j in 0..64 {
 							if i & (1 << j) != 0 {
-								let set_ref = nodes.good_node_services.get(&j).unwrap();
+								let set_ref = &nodes.good_node_services[j];
 								v4_set = set_ref.iter().filter(|e| e.is_ipv4() && e.port() == 8333)
 									.choose_multiple(&mut rng, 21).iter().map(|e| e.ip()).collect();
 								v6_set = set_ref.iter().filter(|e| e.is_ipv6() && e.port() == 8333)
@@ -432,17 +432,17 @@ impl Store {
 						for j in 0..64 {
 							if i & (1 << j) != 0 {
 								if first_set == None {
-									first_set = Some(nodes.good_node_services.get(&j).unwrap());
+									first_set = Some(&nodes.good_node_services[j]);
 								} else {
-									second_set = Some(nodes.good_node_services.get(&j).unwrap());
+									second_set = Some(&nodes.good_node_services[j]);
 									break;
 								}
 							}
 						}
-						v4_set = first_set.unwrap().intersection(second_set.unwrap())
+						v4_set = first_set.unwrap().intersection(&second_set.unwrap())
 							.filter(|e| e.is_ipv4() && e.port() == 8333)
 							.choose_multiple(&mut rng, 21).iter().map(|e| e.ip()).collect();
-						v6_set = first_set.unwrap().intersection(second_set.unwrap())
+						v6_set = first_set.unwrap().intersection(&second_set.unwrap())
 							.filter(|e| e.is_ipv6() && e.port() == 8333)
 							.choose_multiple(&mut rng, 12).iter().map(|e| e.ip()).collect();
 					} else {
@@ -452,10 +452,10 @@ impl Store {
 						for j in 0..64 {
 							if i & (1 << j) != 0 {
 								if intersection_set_ref == None {
-									intersection_set_ref = Some(nodes.good_node_services.get(&j).unwrap());
+									intersection_set_ref = Some(&nodes.good_node_services[j]);
 								} else {
 									let new_intersection = intersection_set_ref.unwrap()
-										.intersection(nodes.good_node_services.get(&j).unwrap()).map(|e| (*e).clone()).collect();
+										.intersection(&nodes.good_node_services[j]).map(|e| (*e).clone()).collect();
 									intersection = Some(new_intersection);
 									intersection_set_ref = Some(intersection.as_ref().unwrap());
 								}

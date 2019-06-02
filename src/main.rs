@@ -211,9 +211,11 @@ fn poll_dnsseeds() {
 
 fn scan_net() {
 	tokio::spawn(future::lazy(|| {
+		let printer = unsafe { PRINTER.as_ref().unwrap() };
 		let store = unsafe { DATA_STORE.as_ref().unwrap() };
 
 		let mut scan_nodes = store.get_next_scan_nodes();
+		printer.add_line(format!("Got {} addresses to scan", scan_nodes.len()), false);
 		let per_iter_time = Duration::from_millis(1000 / store.get_u64(U64Setting::ConnsPerSec));
 		let start_time = Instant::now();
 		let mut iter_time = start_time;

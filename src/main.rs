@@ -211,10 +211,13 @@ fn poll_dnsseeds() {
 		}
 		printer.add_line(format!("Added {} new addresses from other DNS seeds", new_addrs), false);
 		Delay::new(Instant::now() + Duration::from_secs(60)).then(|_| {
-			if !START_SHUTDOWN.load(Ordering::Relaxed) {
-				poll_dnsseeds();
-			}
-			future::ok(())
+			let store = unsafe { DATA_STORE.as_ref().unwrap() };
+			store.save_data().then(|_| {
+				if !START_SHUTDOWN.load(Ordering::Relaxed) {
+					poll_dnsseeds();
+				}
+				future::ok(())
+			})
 		})
 	}));
 }
@@ -234,14 +237,11 @@ fn scan_net() {
 			scan_node(iter_time, node, false);
 			iter_time += per_iter_time;
 		}
-		Delay::new(cmp::max(iter_time, start_time + Duration::from_secs(15))).then(|_| {
-			let store = unsafe { DATA_STORE.as_ref().unwrap() };
-			store.save_data().then(|_| {
-				if !START_SHUTDOWN.load(Ordering::Relaxed) {
-					scan_net();
-				}
-				future::ok(())
-			})
+		Delay::new(cmp::max(iter_time, start_time + Duration::from_secs(1))).then(|_| {
+			if !START_SHUTDOWN.load(Ordering::Relaxed) {
+				scan_net();
+			}
+			future::ok(())
 		})
 	}));
 }

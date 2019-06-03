@@ -138,15 +138,17 @@ pub fn scan_node(scan_time: Instant, node: SocketAddr, manual: bool) {
 						state_lock.recvd_addrs = false;
 						return future::err(());
 					}
-					if !state_lock.recvd_addrs {
-						if let Err(_) = write.try_send(NetworkMessage::GetData(vec![Inventory {
-							inv_type: InvType::WitnessBlock,
-							hash: state_lock.request.1,
-						}])) {
-							return future::err(());
+					if addrs.len() > 10 {
+						if !state_lock.recvd_addrs {
+							if let Err(_) = write.try_send(NetworkMessage::GetData(vec![Inventory {
+								inv_type: InvType::WitnessBlock,
+								hash: state_lock.request.1,
+							}])) {
+								return future::err(());
+							}
 						}
+						state_lock.recvd_addrs = true;
 					}
-					state_lock.recvd_addrs = true;
 					unsafe { DATA_STORE.as_ref().unwrap() }.add_fresh_nodes(&addrs);
 				},
 				NetworkMessage::Block(block) => {

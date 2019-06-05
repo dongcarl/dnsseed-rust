@@ -306,7 +306,7 @@ fn make_trusted_conn(trusted_sockaddr: SocketAddr) {
 						if top_height >= starting_height as u64 {
 							if let Err(_) = trusted_write.try_send(NetworkMessage::GetData(vec![Inventory {
 								inv_type: InvType::WitnessBlock,
-								hash: height_map.get(&(top_height - 1008)).unwrap().clone(),
+								hash: height_map.get(&(top_height - 216)).unwrap().clone(),
 							}])) {
 								return future::err(());
 							}
@@ -327,7 +327,7 @@ fn make_trusted_conn(trusted_sockaddr: SocketAddr) {
 					let hash = block.header.bitcoin_hash();
 					let header_map = unsafe { HEADER_MAP.as_ref().unwrap() }.lock().unwrap();
 					let height = *header_map.get(&hash).expect("Got loose block from trusted peer we coulnd't have requested");
-					if height == unsafe { HIGHEST_HEADER.as_ref().unwrap() }.lock().unwrap().1 - 1008 {
+					if height == unsafe { HIGHEST_HEADER.as_ref().unwrap() }.lock().unwrap().1 - 216 {
 						*unsafe { REQUEST_BLOCK.as_ref().unwrap() }.lock().unwrap() = Arc::new((height, hash, block));
 						if !SCANNING.swap(true, Ordering::SeqCst) {
 							scan_net();

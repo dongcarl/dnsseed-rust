@@ -202,7 +202,7 @@ pub fn scan_node(scan_time: Instant, node: SocketAddr, manual: bool) {
 			}
 		} else {
 			assert!(state_lock.fail_reason != AddressState::Good);
-			if state_lock.fail_reason == AddressState::TimeoutDuringRequest && state_lock.recvd_version && state_lock.recvd_verack {
+			if state_lock.fail_reason == AddressState::TimeoutDuringRequest && state_lock.recvd_version && state_lock.recvd_verack && state_lock.recvd_pong {
 				if !state_lock.recvd_addrs {
 					state_lock.fail_reason = AddressState::TimeoutAwaitingAddr;
 				} else if !state_lock.recvd_block {
@@ -211,8 +211,8 @@ pub fn scan_node(scan_time: Instant, node: SocketAddr, manual: bool) {
 			}
 			let old_state = store.set_node_state(node, state_lock.fail_reason, 0);
 			if (manual || old_state != state_lock.fail_reason) && state_lock.fail_reason == AddressState::TimeoutDuringRequest {
-				printer.add_line(format!("Updating {} from {} to Timeout During Request (ver: {}, vack: {})",
-					node, old_state.to_str(), state_lock.recvd_version, state_lock.recvd_verack), true);
+				printer.add_line(format!("Updating {} from {} to Timeout During Request (ver: {}, vack: {}, pong: {})",
+					node, old_state.to_str(), state_lock.recvd_version, state_lock.recvd_verack, state_lock.recvd_pong), true);
 			} else if manual || (old_state != state_lock.fail_reason && state_lock.msg.0 != "" && state_lock.msg.1) {
 				printer.add_line(format!("Updating {} from {} to {} {}", node, old_state.to_str(), state_lock.fail_reason.to_str(), &state_lock.msg.0), state_lock.msg.1);
 			}

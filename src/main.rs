@@ -24,6 +24,7 @@ use printer::{Printer, Stat};
 use peer::Peer;
 use datastore::{AddressState, Store, U64Setting, RegexSetting};
 use timeout_stream::TimeoutStream;
+use rand::Rng;
 
 use tokio::prelude::*;
 use tokio::timer::Delay;
@@ -44,8 +45,10 @@ struct PeerState {
 	fail_reason: AddressState,
 	recvd_version: bool,
 	recvd_verack: bool,
+	recvd_pong: bool,
 	recvd_addrs: bool,
 	recvd_block: bool,
+	pong_nonce: u64,
 }
 
 pub fn scan_node(scan_time: Instant, node: SocketAddr, manual: bool) {
@@ -53,11 +56,14 @@ pub fn scan_node(scan_time: Instant, node: SocketAddr, manual: bool) {
 	let printer = unsafe { PRINTER.as_ref().unwrap() };
 	let store = unsafe { DATA_STORE.as_ref().unwrap() };
 
+	let mut rng = rand::thread_rng();
 	let peer_state = Arc::new(Mutex::new(PeerState {
 		recvd_version: false,
 		recvd_verack: false,
+		recvd_pong: false,
 		recvd_addrs: false,
 		recvd_block: false,
+		pong_nonce: rng.gen(),
 		node_services: 0,
 		fail_reason: AddressState::Timeout,
 		msg: (String::new(), false),
@@ -122,13 +128,24 @@ pub fn scan_node(scan_time: Instant, node: SocketAddr, manual: bool) {
 				},
 				NetworkMessage::Verack => {
 					check_set_flag!(recvd_verack, "verack");
-					if let Err(_) = write.try_send(NetworkMessage::GetAddr) {
+					if let Err(_) = write.try_send(NetworkMessage::Ping(state_lock.pong_nonce)) {
 						return future::err(());
 					}
 				},
 				NetworkMessage::Ping(v) => {
 					if let Err(_) = write.try_send(NetworkMessage::Pong(v)) {
 						return future::err(())
+					}
+				},
+				NetworkMessage::Pong(v) => {
+					if v != state_lock.pong_nonce {
+						state_lock.fail_reason = AddressState::ProtocolViolation;
+						state_lock.msg = ("due to invalid pong nonce".to_string(), true);
+						return future::err(());
+					}
+					check_set_flag!(recvd_pong, "pong");
+					if let Err(_) = write.try_send(NetworkMessage::GetAddr) {
+						return future::err(());
 					}
 				},
 				NetworkMessage::Addr(addrs) => {
@@ -160,6 +177,11 @@ pub fn scan_node(scan_time: Instant, node: SocketAddr, manual: bool) {
 					check_set_flag!(recvd_block, "block");
 					return future::err(());
 				},
+				NetworkMessage::Tx(_) => {
+					state_lock.fail_reason = AddressState::ProtocolViolation;
+					state_lock.msg = ("due to unrequested transaction".to_string(), true);
+					return future::err(());
+				},
 				_ => {},
 			}
 			future::ok(())
@@ -172,7 +194,7 @@ pub fn scan_node(scan_time: Instant, node: SocketAddr, manual: bool) {
 		printer.set_stat(Stat::ConnectionClosed);
 
 		let mut state_lock = final_peer_state.lock().unwrap();
-		if state_lock.recvd_version && state_lock.recvd_verack &&
+		if state_lock.recvd_version && state_lock.recvd_verack && state_lock.recvd_pong &&
 				state_lock.recvd_addrs && state_lock.recvd_block {
 			let old_state = store.set_node_state(node, AddressState::Good, state_lock.node_services);
 			if manual || (old_state != AddressState::Good && state_lock.msg.0 != "") {

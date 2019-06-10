@@ -27,6 +27,7 @@ pub enum AddressState {
 	ProtocolViolation,
 	Timeout,
 	TimeoutDuringRequest,
+	TimeoutAwaitingPong,
 	TimeoutAwaitingAddr,
 	TimeoutAwaitingBlock,
 	Good,
@@ -45,10 +46,11 @@ impl AddressState {
 			0x6 => Some(AddressState::ProtocolViolation),
 			0x7 => Some(AddressState::Timeout),
 			0x8 => Some(AddressState::TimeoutDuringRequest),
-			0x9 => Some(AddressState::TimeoutAwaitingAddr),
-			0xa => Some(AddressState::TimeoutAwaitingBlock),
-			0xb => Some(AddressState::Good),
-			0xc => Some(AddressState::WasGood),
+			0x9 => Some(AddressState::TimeoutAwaitingPong),
+			0xa => Some(AddressState::TimeoutAwaitingAddr),
+			0xb => Some(AddressState::TimeoutAwaitingBlock),
+			0xc => Some(AddressState::Good),
+			0xd => Some(AddressState::WasGood),
 			_   => None,
 		}
 	}
@@ -64,10 +66,11 @@ impl AddressState {
 			AddressState::ProtocolViolation => 6,
 			AddressState::Timeout => 7,
 			AddressState::TimeoutDuringRequest => 8,
-			AddressState::TimeoutAwaitingAddr => 9,
-			AddressState::TimeoutAwaitingBlock => 10,
-			AddressState::Good => 11,
-			AddressState::WasGood => 12,
+			AddressState::TimeoutAwaitingPong => 9,
+			AddressState::TimeoutAwaitingAddr => 10,
+			AddressState::TimeoutAwaitingBlock => 11,
+			AddressState::Good => 12,
+			AddressState::WasGood => 13,
 		}
 	}
 
@@ -82,6 +85,7 @@ impl AddressState {
 			AddressState::ProtocolViolation => "Protocol Violation",
 			AddressState::Timeout => "Timeout",
 			AddressState::TimeoutDuringRequest => "Timeout During Request",
+			AddressState::TimeoutAwaitingPong => "Timeout Awaiting Pong",
 			AddressState::TimeoutAwaitingAddr => "Timeout Awaiting Addr",
 			AddressState::TimeoutAwaitingBlock => "Timeout Awaiting Block",
 			AddressState::Good => "Good",
@@ -90,7 +94,7 @@ impl AddressState {
 	}
 
 	pub const fn get_count() -> u8 {
-		13
+		14
 	}
 }
 
@@ -175,6 +179,7 @@ impl Store {
 			u64s.insert(U64Setting::RescanInterval(AddressState::ProtocolViolation), try_read!(l, u64));
 			u64s.insert(U64Setting::RescanInterval(AddressState::Timeout), try_read!(l, u64));
 			u64s.insert(U64Setting::RescanInterval(AddressState::TimeoutDuringRequest), try_read!(l, u64));
+			u64s.insert(U64Setting::RescanInterval(AddressState::TimeoutAwaitingPong), try_read!(l, u64));
 			u64s.insert(U64Setting::RescanInterval(AddressState::TimeoutAwaitingAddr), try_read!(l, u64));
 			u64s.insert(U64Setting::RescanInterval(AddressState::TimeoutAwaitingBlock), try_read!(l, u64));
 			u64s.insert(U64Setting::RescanInterval(AddressState::Good), try_read!(l, u64));
@@ -194,6 +199,7 @@ impl Store {
 			u64s.insert(U64Setting::RescanInterval(AddressState::ProtocolViolation), 86400);
 			u64s.insert(U64Setting::RescanInterval(AddressState::Timeout), 86400);
 			u64s.insert(U64Setting::RescanInterval(AddressState::TimeoutDuringRequest), 21600);
+			u64s.insert(U64Setting::RescanInterval(AddressState::TimeoutAwaitingPong), 3600);
 			u64s.insert(U64Setting::RescanInterval(AddressState::TimeoutAwaitingAddr), 1800);
 			u64s.insert(U64Setting::RescanInterval(AddressState::TimeoutAwaitingBlock), 3600);
 			u64s.insert(U64Setting::RescanInterval(AddressState::Good), 1800);
@@ -372,7 +378,7 @@ impl Store {
 	pub fn save_data(&'static self) -> impl Future<Item=(), Error=()> {
 		let settings_file = self.store.clone() + "/settings";
 		let settings_future = File::create(settings_file.clone() + ".tmp").and_then(move |f| {
-			let settings_string = format!("{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}",
+			let settings_string = format!("{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}",
 				self.get_u64(U64Setting::ConnsPerSec),
 				self.get_u64(U64Setting::RunTimeout),
 				self.get_u64(U64Setting::WasGoodTimeout),
@@ -386,6 +392,7 @@ impl Store {
 				self.get_u64(U64Setting::RescanInterval(AddressState::ProtocolViolation)),
 				self.get_u64(U64Setting::RescanInterval(AddressState::Timeout)),
 				self.get_u64(U64Setting::RescanInterval(AddressState::TimeoutDuringRequest)),
+				self.get_u64(U64Setting::RescanInterval(AddressState::TimeoutAwaitingPong)),
 				self.get_u64(U64Setting::RescanInterval(AddressState::TimeoutAwaitingAddr)),
 				self.get_u64(U64Setting::RescanInterval(AddressState::TimeoutAwaitingBlock)),
 				self.get_u64(U64Setting::RescanInterval(AddressState::Good)),

@@ -5,8 +5,8 @@ authors = ["matt"]
 edition = "2018"
 
 [dependencies]
-bitcoin = { git = "https://github.com/rust-bitcoin/rust-bitcoin", rev = "860e74ecb56b546595342bd09e26ca25a7251a1d" }
-bitcoin_hashes = "0.3"
+bitcoin = "0.19"
+bitcoin_hashes = "0.7"
 tokio = "0.1"
 bytes = "0.4"
 futures = "0.1"

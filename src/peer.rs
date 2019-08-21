@@ -45,9 +45,9 @@ impl<'a> std::io::Read for BytesDecoder<'a> {
 struct MsgCoder<'a>(&'a Printer);
 impl<'a> codec::Decoder for MsgCoder<'a> {
 	type Item = NetworkMessage;
-	type Error = std::io::Error;
+	type Error = encode::Error;
 
-	fn decode(&mut self, bytes: &mut bytes::BytesMut) -> Result<Option<NetworkMessage>, std::io::Error> {
+	fn decode(&mut self, bytes: &mut bytes::BytesMut) -> Result<Option<NetworkMessage>, encode::Error> {
 		let mut decoder = BytesDecoder {
 			buf: bytes,
 			pos: 0
@@ -58,19 +58,24 @@ impl<'a> codec::Decoder for MsgCoder<'a> {
 				if res.magic == Network::Bitcoin.magic() {
 					Ok(Some(res.payload))
 				} else {
-					Err(std::io::Error::new(std::io::ErrorKind::InvalidData, "bad net magic"))
+					Err(encode::Error::UnexpectedNetworkMagic {
+						expected: Network::Bitcoin.magic(),
+						actual: res.magic
+					})
 				}
 			},
 			Err(e) => match e {
 				encode::Error::Io(_) => Ok(None),
-				encode::Error::UnrecognizedNetworkCommand(_msg) => {
+				encode::Error::UnrecognizedNetworkCommand(ref msg) => {
 					decoder.buf.advance(decoder.pos);
 					//XXX(fixthese): self.0.add_line(format!("rust-bitcoin doesn't support {}!", msg), true);
-					Ok(None)
+					if msg == "gnop" {
+						Err(e)
+					} else { Ok(None) }
 				},
 				_ => {
 					self.0.add_line(format!("Error decoding message: {:?}", e), true);
-					Err(std::io::Error::new(std::io::ErrorKind::InvalidData, e))
+					Err(e)
 				},
 			}
 		}
@@ -93,7 +98,7 @@ impl<'a> codec::Encoder for MsgCoder<'a> {
 
 pub struct Peer {}
 impl Peer {
-	pub fn new(addr: SocketAddr, timeout: Duration, printer: &'static Printer) -> impl Future<Error=(), Item=(mpsc::Sender<NetworkMessage>, impl Stream<Item=NetworkMessage, Error=std::io::Error>)> {
+	pub fn new(addr: SocketAddr, timeout: Duration, printer: &'static Printer) -> impl Future<Error=(), Item=(mpsc::Sender<NetworkMessage>, impl Stream<Item=NetworkMessage, Error=encode::Error>)> {
 		let connect_timeout = Delay::new(Instant::now() + timeout.clone()).then(|_| {
 			future::err(std::io::Error::new(std::io::ErrorKind::TimedOut, "timeout reached"))
 		});
@@ -118,7 +123,7 @@ impl Peer {
 					nonce: 0xdeadbeef,
 					user_agent: "/rust-bitcoin:0.18/bluematt-tokio-client:0.1/".to_string(),
 					start_height: 0,
-					relay: true,
+					relay: false,
 				}));
 				future::ok((sender, read))
 			})

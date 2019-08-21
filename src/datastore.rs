@@ -32,6 +32,7 @@ pub enum AddressState {
 	TimeoutAwaitingBlock,
 	Good,
 	WasGood,
+	EvilNode,
 }
 
 impl AddressState {
@@ -51,6 +52,7 @@ impl AddressState {
 			0xb => Some(AddressState::TimeoutAwaitingBlock),
 			0xc => Some(AddressState::Good),
 			0xd => Some(AddressState::WasGood),
+			0xe => Some(AddressState::EvilNode),
 			_   => None,
 		}
 	}
@@ -71,6 +73,7 @@ impl AddressState {
 			AddressState::TimeoutAwaitingBlock => 11,
 			AddressState::Good => 12,
 			AddressState::WasGood => 13,
+			AddressState::EvilNode => 14,
 		}
 	}
 
@@ -90,11 +93,12 @@ impl AddressState {
 			AddressState::TimeoutAwaitingBlock => "Timeout Awaiting Block",
 			AddressState::Good => "Good",
 			AddressState::WasGood => "Was Good",
+			AddressState::EvilNode => "Evil Node",
 		}
 	}
 
 	pub const fn get_count() -> u8 {
-		14
+		15
 	}
 }
 
@@ -184,6 +188,7 @@ impl Store {
 			u64s.insert(U64Setting::RescanInterval(AddressState::TimeoutAwaitingBlock), try_read!(l, u64));
 			u64s.insert(U64Setting::RescanInterval(AddressState::Good), try_read!(l, u64));
 			u64s.insert(U64Setting::RescanInterval(AddressState::WasGood), try_read!(l, u64));
+			u64s.insert(U64Setting::RescanInterval(AddressState::EvilNode), try_read!(l, u64));
 			future::ok((u64s, try_read!(l, Regex)))
 		}).or_else(|_| -> future::FutureResult<(HashMap<U64Setting, u64>, Regex), ()> {
 			let mut u64s = HashMap::with_capacity(15);
@@ -204,6 +209,7 @@ impl Store {
 			u64s.insert(U64Setting::RescanInterval(AddressState::TimeoutAwaitingBlock), 3600);
 			u64s.insert(U64Setting::RescanInterval(AddressState::Good), 1800);
 			u64s.insert(U64Setting::RescanInterval(AddressState::WasGood), 1800);
+			u64s.insert(U64Setting::RescanInterval(AddressState::EvilNode), 315360000);
 			u64s.insert(U64Setting::MinProtocolVersion, 70002);
 			future::ok((u64s, Regex::new(".*").unwrap()))
 		});
@@ -378,7 +384,7 @@ impl Store {
 	pub fn save_data(&'static self) -> impl Future<Item=(), Error=()> {
 		let settings_file = self.store.clone() + "/settings";
 		let settings_future = File::create(settings_file.clone() + ".tmp").and_then(move |f| {
-			let settings_string = format!("{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}",
+			let settings_string = format!("{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}",
 				self.get_u64(U64Setting::ConnsPerSec),
 				self.get_u64(U64Setting::RunTimeout),
 				self.get_u64(U64Setting::WasGoodTimeout),
@@ -397,6 +403,7 @@ impl Store {
 				self.get_u64(U64Setting::RescanInterval(AddressState::TimeoutAwaitingBlock)),
 				self.get_u64(U64Setting::RescanInterval(AddressState::Good)),
 				self.get_u64(U64Setting::RescanInterval(AddressState::WasGood)),
+				self.get_u64(U64Setting::RescanInterval(AddressState::EvilNode)),
 				self.get_regex(RegexSetting::SubverRegex).as_str());
 			write_all(f, settings_string).and_then(|(mut f, _)| {
 				f.poll_sync_all()

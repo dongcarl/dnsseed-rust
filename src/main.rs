@@ -69,6 +69,7 @@ pub fn scan_node(scan_time: Instant, node: SocketAddr, manual: bool) {
 		msg: (String::new(), false),
 		request: Arc::clone(&unsafe { REQUEST_BLOCK.as_ref().unwrap() }.lock().unwrap()),
 	}));
+	let err_peer_state = Arc::clone(&peer_state);
 	let final_peer_state = Arc::clone(&peer_state);
 
 	let peer = Delay::new(scan_time).then(move |_| {
@@ -77,7 +78,19 @@ pub fn scan_node(scan_time: Instant, node: SocketAddr, manual: bool) {
 		Peer::new(node.clone(), Duration::from_secs(timeout), printer)
 	});
 	tokio::spawn(peer.and_then(move |(mut write, read)| {
-		TimeoutStream::new_timeout(read, scan_time + Duration::from_secs(store.get_u64(U64Setting::RunTimeout))).map_err(|_| { () }).for_each(move |msg| {
+		TimeoutStream::new_timeout(read, scan_time + Duration::from_secs(store.get_u64(U64Setting::RunTimeout))).map_err(move |err| {
+			match err {
+				bitcoin::consensus::encode::Error::UnrecognizedNetworkCommand(ref msg) => {
+					// If we got here, we hit one of the explicitly disallowed messages indicating
+					// a bogus "node".
+					let mut state_lock = err_peer_state.lock().unwrap();
+					state_lock.msg = (format!("(bad msg type {})", msg), true);
+					state_lock.fail_reason = AddressState::EvilNode;
+				},
+				_ => {},
+			}
+			()
+		}).for_each(move |msg| {
 			let mut state_lock = peer_state.lock().unwrap();
 			macro_rules! check_set_flag {
 				($recvd_flag: ident, $msg: expr) => { {
@@ -177,8 +190,17 @@ pub fn scan_node(scan_time: Instant, node: SocketAddr, manual: bool) {
 					check_set_flag!(recvd_block, "block");
 					return future::err(());
 				},
+				NetworkMessage::Inv(invs) => {
+					for inv in invs {
+						if inv.inv_type == InvType::Transaction {
+							state_lock.fail_reason = AddressState::EvilNode;
+							state_lock.msg = ("due to unrequested inv tx".to_string(), true);
+							return future::err(());
+						}
+					}
+				},
 				NetworkMessage::Tx(_) => {
-					state_lock.fail_reason = AddressState::ProtocolViolation;
+					state_lock.fail_reason = AddressState::EvilNode;
 					state_lock.msg = ("due to unrequested transaction".to_string(), true);
 					return future::err(());
 				},

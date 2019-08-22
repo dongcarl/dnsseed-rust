@@ -434,8 +434,12 @@ impl Store {
 			tokio::fs::rename(nodes_file.clone() + ".tmp", nodes_file)
 		});
 
+		settings_future.join(nodes_future).then(|_| { future::ok(()) })
+	}
+
+	pub fn write_dns(&'static self) -> impl Future<Item=(), Error=()> {
 		let dns_file = self.store.clone() + "/nodes.dump";
-		let dns_future = File::create(dns_file.clone() + ".tmp").and_then(move |f| {
+		File::create(dns_file.clone() + ".tmp").and_then(move |f| {
 			let mut dns_buff = String::new();
 			{
 				let mut rng = thread_rng();
@@ -505,9 +509,7 @@ impl Store {
 			f.poll_sync_all()
 		}).and_then(|_| {
 			tokio::fs::rename(dns_file.clone() + ".tmp", dns_file)
-		});
-
-		settings_future.join3(nodes_future, dns_future).then(|_| { future::ok(()) })
+		}).then(|_| { future::ok(()) })
 	}
 
 	pub fn get_next_scan_nodes(&self) -> Vec<SocketAddr> {

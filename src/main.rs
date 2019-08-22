@@ -258,7 +258,8 @@ fn poll_dnsseeds() {
 		printer.add_line(format!("Added {} new addresses from other DNS seeds", new_addrs), false);
 		Delay::new(Instant::now() + Duration::from_secs(60)).then(|_| {
 			let store = unsafe { DATA_STORE.as_ref().unwrap() };
-			store.save_data().then(|_| {
+			let dns_future = store.write_dns();
+			store.save_data().join(dns_future).then(|_| {
 				if !START_SHUTDOWN.load(Ordering::Relaxed) {
 					poll_dnsseeds();
 				}

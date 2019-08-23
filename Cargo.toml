@@ -15,6 +15,9 @@ rand = "0.6"
 regex = "1"
 num_cpus = "1"
 
+[profile.dev]
+panic = "abort"
+
 [profile.release]
 lto = true
 codegen-units = 1

@@ -182,7 +182,7 @@ impl BGPClient {
 				.then(path_b.med.cmp(&path_a.med))
 		});
 		// TODO: Find last common ASN among all paths
-		*path_vecs[0].path.last().unwrap_or(&0)
+		*path_vecs.first().map(|route| route.path.last().unwrap_or(&0)).unwrap_or(&0)
 	}
 
 	pub fn disconnect(&self) {

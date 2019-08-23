@@ -436,7 +436,7 @@ fn main() {
 			let store = unsafe { DATA_STORE.as_ref().unwrap() };
 			unsafe { PRINTER = Some(Box::new(Printer::new(store))) };
 
-			let bgp_client = BGPClient::new(bgp_sockaddr, Duration::from_secs(600), unsafe { PRINTER.as_ref().unwrap() });
+			let bgp_client = BGPClient::new(bgp_sockaddr, Duration::from_secs(60), unsafe { PRINTER.as_ref().unwrap() });
 			make_trusted_conn(trusted_sockaddr, Arc::clone(&bgp_client));
 
 			reader::read(store, unsafe { PRINTER.as_ref().unwrap() }, bgp_client);

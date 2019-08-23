@@ -257,7 +257,9 @@ impl BGPClient {
 					}
 					match bgp_msg {
 						Message::Open(_) => {
-							printer.add_line("Connected to BGP route provider".to_string(), true);
+							client.routes.lock().unwrap().v4_table.clear();
+							client.routes.lock().unwrap().v6_table.clear();
+							printer.add_line("Connected to BGP route provider".to_string(), false);
 						},
 						Message::KeepAlive => {
 							let _ = sender.try_send(Message::KeepAlive);

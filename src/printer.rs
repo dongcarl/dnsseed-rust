@@ -93,6 +93,7 @@ impl Printer {
 						store.get_u64(U64Setting::WasGoodTimeout)
 						).as_bytes()).expect("stdout broken?");
 				out.write_all(b"a x: Scan node x\n").expect("stdout broken?");
+				out.write_all(b"b x: BGP Lookup IP x\n").expect("stdout broken?");
 				out.write_all(b"\x1b[s").expect("stdout broken?"); // Save cursor position and provide a blank line before cursor
 				out.write_all(b"\x1b[;H\x1b[2K").expect("stdout broken?");
 				out.write_all(b"Most recent log:\n").expect("stdout broken?");

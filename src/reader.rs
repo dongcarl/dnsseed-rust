@@ -1,6 +1,7 @@
+use std::sync::Arc;
 use std::sync::atomic::Ordering;
 use std::io::BufReader;
-use std::net::SocketAddr;
+use std::net::{IpAddr, SocketAddr};
 use std::time::Instant;
 
 use tokio::prelude::*;
@@ -8,12 +9,13 @@ use tokio::io::{stdin, lines};
 
 use crate::printer::Printer;
 use crate::datastore::{Store, AddressState, U64Setting, RegexSetting};
+use crate::bgp_client::BGPClient;
 
 use crate::{START_SHUTDOWN, scan_node};
 
 use regex::Regex;
 
-pub fn read(store: &'static Store, printer: &'static Printer) {
+pub fn read(store: &'static Store, printer: &'static Printer, bgp_client: Arc<BGPClient>) {
 	tokio::spawn(lines(BufReader::new(stdin())).for_each(move |line| {
 		macro_rules! err {
 			() => { {
@@ -53,6 +55,10 @@ pub fn read(store: &'static Store, printer: &'static Printer) {
 				});
 			},
 			"a" => scan_node(Instant::now(), try_parse_next_chunk!(SocketAddr), true),
+			"b" => {
+				let ip = try_parse_next_chunk!(IpAddr);
+				printer.add_line(format!("ASN for {} is {}", ip, bgp_client.get_asn(ip)), false);
+			},
 			"r" => {
 				match AddressState::from_num(try_parse_next_chunk!(u8)) {
 					Some(state) => store.set_u64(U64Setting::RescanInterval(state), try_parse_next_chunk!(u64)),

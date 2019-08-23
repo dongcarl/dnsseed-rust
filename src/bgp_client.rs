@@ -46,14 +46,14 @@ impl RoutingTable {
 			($addrty: ty, $addr: expr, $table: expr, $addr_bits: expr) => { {
 				let mut res = Vec::new();
 				//TODO: Optimize this!
-				for i in (0..($addr_bits + 1)).rev() {
+				for i in (0..$addr_bits).rev() {
 					let mut lookup = $addr.octets();
 					for b in 0..(i / 8) {
-						lookup[lookup.len() - b] = 0;
+						lookup[lookup.len() - b - 1] = 0;
 					}
-					lookup[lookup.len() - (i/8)] &= !(((1u16 << (i % 8)) - 1) as u8);
+					lookup[lookup.len() - (i/8) - 1] &= !(((1u16 << (i % 8)) - 1) as u8);
 					let lookup_addr = <$addrty>::from(lookup);
-					for attrs in $table.range((Included((lookup_addr, $addr_bits, 0)), Included((lookup_addr, $addr_bits, std::u32::MAX)))) {
+					for attrs in $table.range((Included((lookup_addr, $addr_bits - i as u8, 0)), Included((lookup_addr, $addr_bits - i as u8, std::u32::MAX)))) {
 						res.push(Arc::clone(&attrs.1));
 					}
 					if !res.is_empty() { break; }

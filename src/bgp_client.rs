@@ -8,7 +8,7 @@ use std::time::{Duration, Instant};
 
 use bgp_rs::{AFI, SAFI, AddPathDirection, Open, OpenCapability, OpenParameter, NLRIEncoding, PathAttribute};
 use bgp_rs::Capabilities;
-use bgp_rs::{ASPath, Segment};
+use bgp_rs::Segment;
 use bgp_rs::Message;
 use bgp_rs::Reader;
 
@@ -22,9 +22,15 @@ use futures::sync::mpsc;
 
 use crate::printer::Printer;
 
-pub struct RoutingTable {
-	v4_table: BTreeMap<(Ipv4Addr, u8, u32), Arc<Vec<PathAttribute>>>,
-	v6_table: BTreeMap<(Ipv6Addr, u8, u32), Arc<Vec<PathAttribute>>>,
+struct Route {
+	path: Vec<u32>,
+	pref: u32,
+	med: u32,
+}
+
+struct RoutingTable {
+	v4_table: BTreeMap<(Ipv4Addr, u8, u32), Arc<Route>>,
+	v6_table: BTreeMap<(Ipv6Addr, u8, u32), Arc<Route>>,
 }
 
 impl RoutingTable {
@@ -35,7 +41,7 @@ impl RoutingTable {
 		}
 	}
 
-	fn get_route_attrs(&self, ip: IpAddr) -> Vec<Arc<Vec<PathAttribute>>> {
+	fn get_route_attrs(&self, ip: IpAddr) -> Vec<Arc<Route>> {
 		macro_rules! lookup_res {
 			($addrty: ty, $addr: expr, $table: expr, $addr_bits: expr) => { {
 				let mut res = Vec::new();
@@ -81,20 +87,20 @@ impl RoutingTable {
 		};
 	}
 
-	fn announce(&mut self, route: NLRIEncoding, attrs: Arc<Vec<PathAttribute>>) {
-		match route {
+	fn announce(&mut self, prefix: NLRIEncoding, route: Arc<Route>) {
+		match prefix {
 			NLRIEncoding::IP(p) => {
 				let (ip, len) = <(IpAddr, u8)>::from(&p);
 				match ip {
-					IpAddr::V4(v4a) => self.v4_table.insert((v4a, len, 0), attrs),
-					IpAddr::V6(v6a) => self.v6_table.insert((v6a, len, 0), attrs),
+					IpAddr::V4(v4a) => self.v4_table.insert((v4a, len, 0), route),
+					IpAddr::V6(v6a) => self.v6_table.insert((v6a, len, 0), route),
 				}
 			},
 			NLRIEncoding::IP_WITH_PATH_ID((p, id)) => {
 				let (ip, len) = <(IpAddr, u8)>::from(&p);
 				match ip {
-					IpAddr::V4(v4a) => self.v4_table.insert((v4a, len, id), attrs),
-					IpAddr::V6(v6a) => self.v6_table.insert((v6a, len, id), attrs),
+					IpAddr::V4(v4a) => self.v4_table.insert((v4a, len, id), route),
+					IpAddr::V6(v6a) => self.v6_table.insert((v6a, len, id), route),
 				}
 			},
 			NLRIEncoding::IP_MPLS(_) => None,
@@ -169,47 +175,48 @@ pub struct BGPClient {
 }
 impl BGPClient {
 	pub fn get_asn(&self, addr: IpAddr) -> u32 {
-		let attr_set = self.routes.lock().unwrap().get_route_attrs(addr);
-		let mut paths: Vec<(ASPath, u32, u32)> = Vec::new();
-		for attrs in attr_set.iter() {
-			let mut as4_path = None;
-			let mut as_path = None;
-			let mut pref = 100;
-			let mut med = 0;
-			for attr in attrs.iter() {
-				match attr {
-					PathAttribute::AS4_PATH(path) => as4_path = Some(path),
-					PathAttribute::AS_PATH(path) => as_path = Some(path),
-					PathAttribute::LOCAL_PREF(p) => pref = *p,
-					PathAttribute::MULTI_EXIT_DISC(m) => med = *m,
-					_ => {},
-				}
-			}
-			if let Some(path) = as4_path.or(as_path) {
-				paths.push((path.clone(), pref, med));
+		let mut path_vecs = self.routes.lock().unwrap().get_route_attrs(addr).clone();
+		path_vecs.sort_unstable_by(|path_a, path_b| {
+			path_a.pref.cmp(&path_b.pref)
+				.then(path_b.path.len().cmp(&path_a.path.len()))
+				.then(path_b.med.cmp(&path_a.med))
+		});
+		// TODO: Find last common ASN among all paths
+		*path_vecs[0].path.last().unwrap_or(&0)
+	}
+
+	pub fn disconnect(&self) {
+		self.shutdown.store(true, Ordering::Relaxed);
+	}
+
+	fn map_attrs(mut attrs: Vec<PathAttribute>) -> Option<Route> {
+		let mut as4_path = None;
+		let mut as_path = None;
+		let mut pref = 100;
+		let mut med = 0;
+		for attr in attrs.drain(..) {
+			match attr {
+				PathAttribute::AS4_PATH(path) => as4_path = Some(path),
+				PathAttribute::AS_PATH(path) => as_path = Some(path),
+				PathAttribute::LOCAL_PREF(p) => pref = p,
+				PathAttribute::MULTI_EXIT_DISC(m) => med = m,
+				_ => {},
 			}
 		}
-		if paths.is_empty() { return 0; }
-
-		let mut path_vecs: Vec<_> = paths.iter_mut().map(|(p, pref, med)| {
+		if let Some(mut aspath) = as4_path.or(as_path) {
 			let mut path = Vec::new();
-			for seg in p.segments.drain(..) {
+			for seg in aspath.segments.drain(..) {
 				match seg {
 					Segment::AS_SEQUENCE(mut asn) => path.append(&mut asn),
 					Segment::AS_SET(_) => {}, // Ignore sets for now, they're not that common anyway
 				}
 			}
-			(path, pref, med)
-		}).collect();
-		path_vecs.sort_unstable_by(|(path_a, pref_a, med_a), (path_b, pref_b, med_b)| {
-			pref_a.cmp(pref_b).then(path_b.len().cmp(&path_a.len())).then(med_b.cmp(med_a))
-		});
-		// TODO: Find last common ASN among all paths
-		*path_vecs[0].0.last().unwrap_or(&0)
-	}
-
-	pub fn disconnect(&self) {
-		self.shutdown.store(true, Ordering::Relaxed);
+			return Some(Route {
+				path: path.clone(),
+				pref,
+				med,
+			})
+		} else { None }
 	}
 
 	fn connect_given_client(addr: SocketAddr, timeout: Duration, printer: &'static Printer, client: Arc<BGPClient>) {
@@ -261,9 +268,11 @@ impl BGPClient {
 							for r in upd.withdrawn_routes {
 								route_table.withdraw(r);
 							}
-							let attrs = Arc::new(upd.attributes);
-							for r in upd.announced_routes {
-								route_table.announce(r, Arc::clone(&attrs));
+							if let Some(path) = Self::map_attrs(upd.attributes) {
+								let path_arc = Arc::new(path);
+								for r in upd.announced_routes {
+									route_table.announce(r, Arc::clone(&path_arc));
+								}
 							}
 						},
 						_ => {}

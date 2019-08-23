@@ -176,13 +176,24 @@ pub struct BGPClient {
 impl BGPClient {
 	pub fn get_asn(&self, addr: IpAddr) -> u32 {
 		let mut path_vecs = self.routes.lock().unwrap().get_route_attrs(addr).clone();
+		if path_vecs.is_empty() { return 0; }
+
 		path_vecs.sort_unstable_by(|path_a, path_b| {
 			path_a.pref.cmp(&path_b.pref)
 				.then(path_b.path.len().cmp(&path_a.path.len()))
 				.then(path_b.med.cmp(&path_a.med))
 		});
-		// TODO: Find last common ASN among all paths
-		*path_vecs.first().map(|route| route.path.last().unwrap_or(&0)).unwrap_or(&0)
+
+		let primary_route = path_vecs.pop().unwrap();
+		'asn_candidates: for asn in primary_route.path.iter().rev() {
+			for secondary_route in path_vecs.iter() {
+				if !secondary_route.path.contains(asn) {
+					continue 'asn_candidates;
+				}
+			}
+			return *asn;
+		}
+		*primary_route.path.last().unwrap_or(&0)
 	}
 
 	pub fn disconnect(&self) {

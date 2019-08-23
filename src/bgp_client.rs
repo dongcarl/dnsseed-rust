@@ -1,8 +1,7 @@
 use std::sync::{Arc, Mutex};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::cmp;
-use std::ops::Bound::Included;
-use std::collections::BTreeMap;
+use std::collections::HashMap;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
 use std::time::{Duration, Instant};
 
@@ -30,22 +29,21 @@ struct Route {
 }
 
 struct RoutingTable {
-	v4_table: BTreeMap<(Ipv4Addr, u8, u32), Arc<Route>>,
-	v6_table: BTreeMap<(Ipv6Addr, u8, u32), Arc<Route>>,
+	v4_table: HashMap<(Ipv4Addr, u8), HashMap<u32, Arc<Route>>>,
+	v6_table: HashMap<(Ipv6Addr, u8), HashMap<u32, Arc<Route>>>,
 }
 
 impl RoutingTable {
 	fn new() -> Self {
 		Self {
-			v4_table: BTreeMap::new(),
-			v6_table: BTreeMap::new(),
+			v4_table: HashMap::new(),
+			v6_table: HashMap::new(),
 		}
 	}
 
 	fn get_route_attrs(&self, ip: IpAddr) -> Vec<Arc<Route>> {
 		macro_rules! lookup_res {
 			($addrty: ty, $addr: expr, $table: expr, $addr_bits: expr) => { {
-				let mut res = Vec::new();
 				//TODO: Optimize this!
 				for i in (0..$addr_bits).rev() {
 					let mut lookup = $addr.octets();
@@ -54,12 +52,13 @@ impl RoutingTable {
 					}
 					lookup[lookup.len() - (i/8) - 1] &= !(((1u16 << (i % 8)) - 1) as u8);
 					let lookup_addr = <$addrty>::from(lookup);
-					for attrs in $table.range((Included((lookup_addr, $addr_bits - i as u8, 0)), Included((lookup_addr, $addr_bits - i as u8, std::u32::MAX)))) {
-						res.push(Arc::clone(&attrs.1));
+					if let Some(routes) = $table.get(&(lookup_addr, $addr_bits - i as u8)).map(|hm| hm.values()) {
+						if routes.len() > 0 {
+							return routes.map(|x| Arc::clone(&x)).collect();
+						}
 					}
-					if !res.is_empty() { break; }
 				}
-				res
+				vec![]
 			} }
 		}
 		match ip {
@@ -73,15 +72,15 @@ impl RoutingTable {
 			NLRIEncoding::IP(p) => {
 				let (ip, len) = <(IpAddr, u8)>::from(&p);
 				match ip {
-					IpAddr::V4(v4a) => self.v4_table.remove(&(v4a, len, 0)),
-					IpAddr::V6(v6a) => self.v6_table.remove(&(v6a, len, 0)),
+					IpAddr::V4(v4a) => self.v4_table.get_mut(&(v4a, len)).and_then(|hm| hm.remove(&0)),
+					IpAddr::V6(v6a) => self.v6_table.get_mut(&(v6a, len)).and_then(|hm| hm.remove(&0)),
 				}
 			},
 			NLRIEncoding::IP_WITH_PATH_ID((p, id)) => {
 				let (ip, len) = <(IpAddr, u8)>::from(&p);
 				match ip {
-					IpAddr::V4(v4a) => self.v4_table.remove(&(v4a, len, id)),
-					IpAddr::V6(v6a) => self.v6_table.remove(&(v6a, len, id)),
+					IpAddr::V4(v4a) => self.v4_table.get_mut(&(v4a, len)).and_then(|hm| hm.remove(&id)),
+					IpAddr::V6(v6a) => self.v6_table.get_mut(&(v6a, len)).and_then(|hm| hm.remove(&id)),
 				}
 			},
 			NLRIEncoding::IP_MPLS(_) => None,
@@ -93,15 +92,15 @@ impl RoutingTable {
 			NLRIEncoding::IP(p) => {
 				let (ip, len) = <(IpAddr, u8)>::from(&p);
 				match ip {
-					IpAddr::V4(v4a) => self.v4_table.insert((v4a, len, 0), route),
-					IpAddr::V6(v6a) => self.v6_table.insert((v6a, len, 0), route),
+					IpAddr::V4(v4a) => self.v4_table.entry((v4a, len)).or_insert(HashMap::new()).insert(0, route),
+					IpAddr::V6(v6a) => self.v6_table.entry((v6a, len)).or_insert(HashMap::new()).insert(0, route),
 				}
 			},
 			NLRIEncoding::IP_WITH_PATH_ID((p, id)) => {
 				let (ip, len) = <(IpAddr, u8)>::from(&p);
 				match ip {
-					IpAddr::V4(v4a) => self.v4_table.insert((v4a, len, id), route),
-					IpAddr::V6(v6a) => self.v6_table.insert((v6a, len, id), route),
+					IpAddr::V4(v4a) => self.v4_table.entry((v4a, len)).or_insert(HashMap::new()).insert(id, route),
+					IpAddr::V6(v6a) => self.v6_table.entry((v6a, len)).or_insert(HashMap::new()).insert(id, route),
 				}
 			},
 			NLRIEncoding::IP_MPLS(_) => None,

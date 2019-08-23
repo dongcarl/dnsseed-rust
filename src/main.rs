@@ -1,6 +1,7 @@
 mod printer;
 mod reader;
 mod peer;
+mod bgp_client;
 mod timeout_stream;
 mod datastore;
 
@@ -25,6 +26,7 @@ use peer::Peer;
 use datastore::{AddressState, Store, U64Setting, RegexSetting};
 use timeout_stream::TimeoutStream;
 use rand::Rng;
+use bgp_client::BGPClient;
 
 use tokio::prelude::*;
 use tokio::timer::Delay;
@@ -245,7 +247,7 @@ pub fn scan_node(scan_time: Instant, node: SocketAddr, manual: bool) {
 	}));
 }
 
-fn poll_dnsseeds() {
+fn poll_dnsseeds(bgp_client: Arc<BGPClient>) {
 	tokio::spawn(future::lazy(|| {
 		let printer = unsafe { PRINTER.as_ref().unwrap() };
 		let store = unsafe { DATA_STORE.as_ref().unwrap() };
@@ -258,10 +260,12 @@ fn poll_dnsseeds() {
 		printer.add_line(format!("Added {} new addresses from other DNS seeds", new_addrs), false);
 		Delay::new(Instant::now() + Duration::from_secs(60)).then(|_| {
 			let store = unsafe { DATA_STORE.as_ref().unwrap() };
-			let dns_future = store.write_dns();
+			let dns_future = store.write_dns(Arc::clone(&bgp_client));
 			store.save_data().join(dns_future).then(|_| {
 				if !START_SHUTDOWN.load(Ordering::Relaxed) {
-					poll_dnsseeds();
+					poll_dnsseeds(bgp_client);
+				} else {
+					bgp_client.disconnect();
 				}
 				future::ok(())
 			})
@@ -293,9 +297,10 @@ fn scan_net() {
 	}));
 }
 
-fn make_trusted_conn(trusted_sockaddr: SocketAddr) {
+fn make_trusted_conn(trusted_sockaddr: SocketAddr, bgp_client: Arc<BGPClient>) {
 	let printer = unsafe { PRINTER.as_ref().unwrap() };
 	let trusted_peer = Peer::new(trusted_sockaddr.clone(), Duration::from_secs(600), printer);
+	let bgp_reload = Arc::clone(&bgp_client);
 	tokio::spawn(trusted_peer.and_then(move |(mut trusted_write, trusted_read)| {
 		printer.add_line("Connected to local peer".to_string(), false);
 		let mut starting_height = 0;
@@ -378,7 +383,7 @@ fn make_trusted_conn(trusted_sockaddr: SocketAddr) {
 						*unsafe { REQUEST_BLOCK.as_ref().unwrap() }.lock().unwrap() = Arc::new((height, hash, block));
 						if !SCANNING.swap(true, Ordering::SeqCst) {
 							scan_net();
-							poll_dnsseeds();
+							poll_dnsseeds(Arc::clone(&bgp_client));
 						}
 					}
 				},
@@ -396,15 +401,15 @@ fn make_trusted_conn(trusted_sockaddr: SocketAddr) {
 	}).then(move |_: Result<(), ()>| {
 		if !START_SHUTDOWN.load(Ordering::Relaxed) {
 			printer.add_line("Lost connection from trusted peer".to_string(), true);
-			make_trusted_conn(trusted_sockaddr);
+			make_trusted_conn(trusted_sockaddr, bgp_reload);
 		}
 		future::ok(())
 	}));
 }
 
 fn main() {
-	if env::args().len() != 3 {
-		println!("USAGE: dnsseed-rust datastore localPeerAddress");
+	if env::args().len() != 4 {
+		println!("USAGE: dnsseed-rust datastore localPeerAddress bgp_peer");
 		return;
 	}
 
@@ -423,15 +428,16 @@ fn main() {
 		let mut args = env::args();
 		args.next();
 		let path = args.next().unwrap();
-		let addr = args.next().unwrap();
+		let trusted_sockaddr: SocketAddr = args.next().unwrap().parse().unwrap();
+		let bgp_sockaddr: SocketAddr = args.next().unwrap().parse().unwrap();
 
 		Store::new(path).and_then(move |store| {
 			unsafe { DATA_STORE = Some(Box::new(store)) };
 			let store = unsafe { DATA_STORE.as_ref().unwrap() };
 			unsafe { PRINTER = Some(Box::new(Printer::new(store))) };
 
-			let trusted_sockaddr: SocketAddr = addr.parse().unwrap();
-			make_trusted_conn(trusted_sockaddr);
+			let bgp_client = BGPClient::new(bgp_sockaddr, Duration::from_secs(600), unsafe { PRINTER.as_ref().unwrap() });
+			make_trusted_conn(trusted_sockaddr, bgp_client);
 
 			reader::read(store, unsafe { PRINTER.as_ref().unwrap() });
 

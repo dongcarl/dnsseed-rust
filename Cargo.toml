@@ -7,6 +7,7 @@ edition = "2018"
 [dependencies]
 bitcoin = "0.19"
 bitcoin_hashes = "0.7"
+bgp-rs = { git = "https://github.com/TheBlueMatt/bgp-rs", rev = "330837f97b7e8e5ea3db66a4b3512863e54da8b0" }
 tokio = "0.1"
 bytes = "0.4"
 futures = "0.1"

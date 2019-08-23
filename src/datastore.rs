@@ -16,6 +16,8 @@ use tokio::io::write_all;
 
 use regex::Regex;
 
+use crate::bgp_client::BGPClient;
+
 #[derive(Clone, Copy, Hash, PartialEq, Eq)]
 pub enum AddressState {
 	Untested,
@@ -437,7 +439,7 @@ impl Store {
 		settings_future.join(nodes_future).then(|_| { future::ok(()) })
 	}
 
-	pub fn write_dns(&'static self) -> impl Future<Item=(), Error=()> {
+	pub fn write_dns(&'static self, bgp_client: Arc<BGPClient>) -> impl Future<Item=(), Error=()> {
 		let dns_file = self.store.clone() + "/nodes.dump";
 		File::create(dns_file.clone() + ".tmp").and_then(move |f| {
 			let mut dns_buff = String::new();
@@ -496,10 +498,12 @@ impl Store {
 								.filter(|e| e.is_ipv6() && e.port() == 8333).map(|e| e.ip()).collect();
 						}
 					}
-					for a in v4_set.iter().choose_multiple(&mut rng, 21) {
+					let mut asn_set = HashSet::with_capacity(cmp::max(v4_set.len(), v6_set.len()));
+					for a in v4_set.iter().filter(|a| asn_set.insert(bgp_client.get_asn(**a))).choose_multiple(&mut rng, 21) {
 						dns_buff += &format!("x{:x}.dnsseed\tIN\tA\t{}\n", i, a);
 					}
-					for a in v6_set.iter().choose_multiple(&mut rng, 12) {
+					asn_set.clear();
+					for a in v6_set.iter().filter(|a| asn_set.insert(bgp_client.get_asn(**a))).choose_multiple(&mut rng, 12) {
 						dns_buff += &format!("x{:x}.dnsseed\tIN\tAAAA\t{}\n", i, a);
 					}
 				}

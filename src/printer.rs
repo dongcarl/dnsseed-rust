@@ -11,12 +11,16 @@ pub enum Stat {
 	HeaderCount(u64),
 	NewConnection,
 	ConnectionClosed,
+	V4RoutingTableSize(usize),
+	V6RoutingTableSize(usize),
 }
 
 struct Stats {
 	lines: LinkedList<String>,
 	header_count: u64,
 	connection_count: u64,
+	v4_table_size: usize,
+	v6_table_size: usize,
 }
 
 pub struct Printer {
@@ -29,6 +33,8 @@ impl Printer {
 			lines: LinkedList::new(),
 			header_count: 0,
 			connection_count: 0,
+			v4_table_size: 0,
+			v6_table_size: 0,
 		}));
 		let thread_arc = Arc::clone(&stats);
 		std::thread::spawn(move || {
@@ -83,6 +89,10 @@ impl Printer {
 							).as_bytes()).expect("stdout broken?");
 				}
 
+				out.write_all(format!(
+						"\nBGP Routing Table: {} v4 paths, {} v6 paths\n",
+						stats.v4_table_size, stats.v6_table_size).as_bytes()).expect("stdout broken?");
+
 				out.write_all(b"\nCommands:\n").expect("stdout broken?");
 				out.write_all(b"q: quit\n").expect("stdout broken?");
 				out.write_all(format!(
@@ -124,6 +134,8 @@ impl Printer {
 			Stat::HeaderCount(c) => self.stats.lock().unwrap().header_count = c,
 			Stat::NewConnection => self.stats.lock().unwrap().connection_count += 1,
 			Stat::ConnectionClosed => self.stats.lock().unwrap().connection_count -= 1,
+			Stat::V4RoutingTableSize(c) => self.stats.lock().unwrap().v4_table_size = c,
+			Stat::V6RoutingTableSize(c) => self.stats.lock().unwrap().v6_table_size = c,
 		}
 	}
 }

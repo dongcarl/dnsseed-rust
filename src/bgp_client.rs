@@ -20,7 +20,7 @@ use tokio::timer::Delay;
 
 use futures::sync::mpsc;
 
-use crate::printer::Printer;
+use crate::printer::{Printer, Stat};
 
 struct Route {
 	path: Vec<u32>,
@@ -287,6 +287,8 @@ impl BGPClient {
 									route_table.announce(r, Arc::clone(&path_arc));
 								}
 							}
+							printer.set_stat(Stat::V4RoutingTableSize(route_table.v4_table.len()));
+							printer.set_stat(Stat::V6RoutingTableSize(route_table.v6_table.len()));
 						},
 						_ => {}
 					}

@@ -43,15 +43,12 @@ impl RoutingTable {
 
 	fn get_route_attrs(&self, ip: IpAddr) -> Vec<Arc<Route>> {
 		macro_rules! lookup_res {
-			($addrty: ty, $addr: expr, $table: expr, $addr_bits: expr) => { {
+			($addrty: ty, $addr: expr, $table: expr, $addr_bits: expr, $addr_intty: ty) => { {
 				//TODO: Optimize this!
 				for i in (0..$addr_bits).rev() {
-					let mut lookup = $addr.octets();
-					for b in 0..(i / 8) {
-						lookup[lookup.len() - b - 1] = 0;
-					}
-					lookup[lookup.len() - (i/8) - 1] &= !(((1u16 << (i % 8)) - 1) as u8);
-					let lookup_addr = <$addrty>::from(lookup);
+					let mask: $addr_intty = !((1 << i) - 1);
+					let lookup: $addr_intty = $addr.into();
+					let lookup_addr = <$addrty>::from(lookup & mask);
 					if let Some(routes) = $table.get(&(lookup_addr, $addr_bits - i as u8)).map(|hm| hm.values()) {
 						if routes.len() > 0 {
 							return routes.map(|x| Arc::clone(&x)).collect();
@@ -62,8 +59,8 @@ impl RoutingTable {
 			} }
 		}
 		match ip {
-			IpAddr::V4(v4a) => lookup_res!(Ipv4Addr, v4a, self.v4_table, 32),
-			IpAddr::V6(v6a) => lookup_res!(Ipv6Addr, v6a, self.v6_table, 128)
+			IpAddr::V4(v4a) => lookup_res!(Ipv4Addr, v4a, self.v4_table, 32, u32),
+			IpAddr::V6(v6a) => lookup_res!(Ipv6Addr, v6a, self.v6_table, 128, u128),
 		}
 	}
 

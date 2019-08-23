@@ -499,10 +499,12 @@ impl Store {
 						}
 					}
 					let mut asn_set = HashSet::with_capacity(cmp::max(v4_set.len(), v6_set.len()));
+					asn_set.insert(0);
 					for a in v4_set.iter().filter(|a| asn_set.insert(bgp_client.get_asn(**a))).choose_multiple(&mut rng, 21) {
 						dns_buff += &format!("x{:x}.dnsseed\tIN\tA\t{}\n", i, a);
 					}
 					asn_set.clear();
+					asn_set.insert(0);
 					for a in v6_set.iter().filter(|a| asn_set.insert(bgp_client.get_asn(**a))).choose_multiple(&mut rng, 12) {
 						dns_buff += &format!("x{:x}.dnsseed\tIN\tAAAA\t{}\n", i, a);
 					}
